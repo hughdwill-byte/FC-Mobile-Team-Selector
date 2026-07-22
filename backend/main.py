@@ -1,16 +1,13 @@
 """FastAPI application: REST API + serves the browser GUI."""
 from __future__ import annotations
 
-from typing import Optional
-
-from fastapi import FastAPI, HTTPException, Response, UploadFile
+from fastapi import FastAPI, HTTPException, UploadFile
 from fastapi.responses import FileResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
-from sqlmodel import Session, select
 
-from . import analysis, csvio, rules as rules_mod, upgrades as upgrades_mod
-from .db import engine, init_db
-from .models import MAIN_STATS, Player, PlayerCreate
+from . import analysis, csvio, db, rules as rules_mod, upgrades as upgrades_mod
+from .db import init_db
+from .models import MAIN_STATS, player_from_dict
 from .optimizer import optimize
 from .paths import DB_PATH, FRONTEND_DIR
 from .scoring import player_to_state
@@ -24,23 +21,8 @@ def _startup() -> None:
     init_db()
 
 
-# ----------------------------------------------------------------------------
-# Helpers
-# ----------------------------------------------------------------------------
-def _all_players(session: Session) -> list[Player]:
-    return list(session.exec(select(Player).order_by(Player.name)).all())
-
-
-def _states(session: Session):
-    return [player_to_state(p) for p in _all_players(session)]
-
-
-def _apply(player: Player, data: dict) -> None:
-    for key in ("name", "ovr", "rank", "training_level", *MAIN_STATS,
-                "positions", "rankup_positions", "playstyles",
-                "growth_override", "skill_points", "notes"):
-        if key in data and data[key] is not None:
-            setattr(player, key, data[key])
+def _states():
+    return [player_to_state(p) for p in db.get_all()]
 
 
 # ----------------------------------------------------------------------------
@@ -89,66 +71,51 @@ def put_rule(name: str, body: dict):
 # ----------------------------------------------------------------------------
 @app.get("/api/players")
 def list_players():
-    with Session(engine) as s:
-        return [player_out(p) for p in _all_players(s)]
+    return [player_out(p) for p in db.get_all()]
 
 
 @app.post("/api/players")
-def create_player(body: PlayerCreate):
-    with Session(engine) as s:
-        p = Player(**body.model_dump())
-        s.add(p)
-        s.commit()
-        s.refresh(p)
-        return player_out(p)
+def create_player(body: dict):
+    if not (body.get("name") or "").strip():
+        raise HTTPException(400, "Name is required")
+    p = player_from_dict(body)
+    return player_out(db.create(p))
 
 
 @app.get("/api/players/{player_id}")
 def get_player(player_id: int):
-    with Session(engine) as s:
-        p = s.get(Player, player_id)
-        if not p:
-            raise HTTPException(404, "Player not found")
-        return player_out(p)
+    p = db.get(player_id)
+    if not p:
+        raise HTTPException(404, "Player not found")
+    return player_out(p)
 
 
 @app.put("/api/players/{player_id}")
 def update_player(player_id: int, body: dict):
-    with Session(engine) as s:
-        p = s.get(Player, player_id)
-        if not p:
-            raise HTTPException(404, "Player not found")
-        _apply(p, body)
-        s.add(p)
-        s.commit()
-        s.refresh(p)
-        return player_out(p)
+    p = db.get(player_id)
+    if not p:
+        raise HTTPException(404, "Player not found")
+    player_from_dict(body, base=p)
+    return player_out(db.update(player_id, p))
 
 
 @app.delete("/api/players/{player_id}")
 def delete_player(player_id: int):
-    with Session(engine) as s:
-        p = s.get(Player, player_id)
-        if not p:
-            raise HTTPException(404, "Player not found")
-        s.delete(p)
-        s.commit()
-        return {"ok": True}
+    if not db.get(player_id):
+        raise HTTPException(404, "Player not found")
+    db.delete(player_id)
+    return {"ok": True}
 
 
 @app.post("/api/players/{player_id}/duplicate")
 def duplicate_player(player_id: int):
-    with Session(engine) as s:
-        p = s.get(Player, player_id)
-        if not p:
-            raise HTTPException(404, "Player not found")
-        data = p.model_dump(exclude={"id"})
-        data["name"] = f"{p.name} (copy)"
-        clone = Player(**data)
-        s.add(clone)
-        s.commit()
-        s.refresh(clone)
-        return player_out(clone)
+    p = db.get(player_id)
+    if not p:
+        raise HTTPException(404, "Player not found")
+    clone = player_from_dict(p.to_dict())
+    clone.id = None
+    clone.name = f"{p.name} (copy)"
+    return player_out(db.create(clone))
 
 
 # ----------------------------------------------------------------------------
@@ -156,41 +123,36 @@ def duplicate_player(player_id: int):
 # ----------------------------------------------------------------------------
 @app.get("/api/squad")
 def squad(top: int = 5):
-    with Session(engine) as s:
-        states = _states(s)
-        if len(states) < 11:
-            return {"enough_players": False, "have": len(states), "need": 11, "results": []}
-        results = optimize(states, top_n=top)
-        return {"enough_players": True, "have": len(states), "results": [formation_out(r) for r in results]}
+    states = _states()
+    if len(states) < 11:
+        return {"enough_players": False, "have": len(states), "need": 11, "results": []}
+    results = optimize(states, top_n=top)
+    return {"enough_players": True, "have": len(states), "results": [formation_out(r) for r in results]}
 
 
 @app.get("/api/upgrades")
 def upgrade_plan(limit: int = 40):
-    with Session(engine) as s:
-        states = _states(s)
-        if len(states) < 11:
-            return {"enough_players": False, "have": len(states), "need": 11}
-        plan = upgrades_mod.plan_upgrades(states, limit=limit)
-        plan["enough_players"] = True
-        return plan
+    states = _states()
+    if len(states) < 11:
+        return {"enough_players": False, "have": len(states), "need": 11}
+    plan = upgrades_mod.plan_upgrades(states, limit=limit)
+    plan["enough_players"] = True
+    return plan
 
 
 @app.get("/api/gaps")
 def gaps():
-    with Session(engine) as s:
-        states = _states(s)
-        if len(states) < 11:
-            return {"enough_players": False, "have": len(states), "need": 11}
-        report = analysis.gap_report(states)
-        report["enough_players"] = True
-        return report
+    states = _states()
+    if len(states) < 11:
+        return {"enough_players": False, "have": len(states), "need": 11}
+    report = analysis.gap_report(states)
+    report["enough_players"] = True
+    return report
 
 
 @app.get("/api/bench")
 def bench(size: int = 7):
-    with Session(engine) as s:
-        states = _states(s)
-        return {"bench": analysis.bench_view(states, size=size)}
+    return {"bench": analysis.bench_view(_states(), size=size)}
 
 
 # ----------------------------------------------------------------------------
@@ -198,8 +160,7 @@ def bench(size: int = 7):
 # ----------------------------------------------------------------------------
 @app.get("/api/export/csv")
 def export_csv():
-    with Session(engine) as s:
-        text = csvio.export_csv(_all_players(s))
+    text = csvio.export_csv(db.get_all())
     return PlainTextResponse(
         text,
         headers={"Content-Disposition": "attachment; filename=fcmobile_players.csv"},
@@ -211,37 +172,30 @@ def export_csv():
 async def import_csv(file: UploadFile, replace: bool = False):
     raw = (await file.read()).decode("utf-8-sig")
     incoming = csvio.parse_csv(raw)
-    with Session(engine) as s:
-        if replace:
-            for p in _all_players(s):
-                s.delete(p)
-            s.commit()
-        for p in incoming:
-            s.add(p)
-        s.commit()
+    if replace:
+        db.delete_all()
+    for p in incoming:
+        db.create(p)
     return {"ok": True, "imported": len(incoming), "replaced": replace}
 
 
 @app.get("/api/export/json")
 def export_json():
-    with Session(engine) as s:
-        data = [p.model_dump() for p in _all_players(s)]
-    return {"players": data}
+    return {"players": [p.to_dict() for p in db.get_all()]}
 
 
 @app.post("/api/import/json")
 def import_json(body: dict, replace: bool = False):
     players = body.get("players", [])
-    with Session(engine) as s:
-        if replace:
-            for p in _all_players(s):
-                s.delete(p)
-            s.commit()
-        for row in players:
-            row.pop("id", None)
-            s.add(Player(**row))
-        s.commit()
-    return {"ok": True, "imported": len(players), "replaced": replace}
+    if replace:
+        db.delete_all()
+    count = 0
+    for row in players:
+        p = player_from_dict(row)
+        p.id = None
+        db.create(p)
+        count += 1
+    return {"ok": True, "imported": count, "replaced": replace}
 
 
 @app.get("/api/backup/db")

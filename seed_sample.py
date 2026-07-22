@@ -10,9 +10,8 @@ from __future__ import annotations
 
 import sys
 
-from sqlmodel import Session, select
-
-from backend.db import engine, init_db
+from backend import db
+from backend.db import init_db
 from backend.models import Player
 
 SAMPLE = [
@@ -41,19 +40,15 @@ SAMPLE = [
 def main() -> None:
     replace = "--replace" in sys.argv
     init_db()
-    with Session(engine) as s:
-        if replace:
-            for p in s.exec(select(Player)).all():
-                s.delete(p)
-            s.commit()
-        for (name, ovr, rank, lvl, pac, sho, pas, dri, dfn, phy, pos, styles) in SAMPLE:
-            s.add(Player(
-                name=name, ovr=ovr, rank=rank, training_level=lvl,
-                pace=pac, shooting=sho, passing=pas, dribbling=dri, defending=dfn, physical=phy,
-                positions=pos,
-                playstyles=[{"name": n, "plus": plus} for (n, plus) in styles],
-            ))
-        s.commit()
+    if replace:
+        db.delete_all()
+    for (name, ovr, rank, lvl, pac, sho, pas, dri, dfn, phy, pos, styles) in SAMPLE:
+        db.create(Player(
+            name=name, ovr=ovr, rank=rank, training_level=lvl,
+            pace=pac, shooting=sho, passing=pas, dribbling=dri, defending=dfn, physical=phy,
+            positions=pos,
+            playstyles=[{"name": n, "plus": plus} for (n, plus) in styles],
+        ))
     print(f"Seeded {len(SAMPLE)} sample players (replace={replace}).")
 
 

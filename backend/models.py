@@ -1,4 +1,7 @@
-"""Database models (SQLModel). The entire collection lives in one SQLite file.
+"""Data model - plain Python dataclasses, no third-party ORM.
+
+The whole collection lives in one SQLite file, using Python's built-in `sqlite3`
+module (see db.py). Nothing here needs to be installed.
 
 A note on how stats are stored: you enter each player's SIX MAIN STATS exactly as
 they currently appear in-game (pace/shooting/passing/dribbling/defending/physical),
@@ -8,18 +11,22 @@ re-enter anything.
 """
 from __future__ import annotations
 
+from dataclasses import asdict, dataclass, field
 from typing import Optional
-
-from sqlalchemy import Column, JSON
-from sqlmodel import Field, SQLModel
 
 MAIN_STATS = ["pace", "shooting", "passing", "dribbling", "defending", "physical"]
 
+# Fields a client is allowed to set on a player (everything except the id).
+EDITABLE_FIELDS = [
+    "name", "ovr", "rank", "training_level", *MAIN_STATS,
+    "positions", "rankup_positions", "playstyles",
+    "growth_override", "skill_points", "notes",
+]
 
-class Player(SQLModel, table=True):
-    id: Optional[int] = Field(default=None, primary_key=True)
-    name: str = Field(index=True)
 
+@dataclass
+class Player:
+    name: str = ""
     ovr: int = 50
     rank: int = 0                 # 0..5  (times OVR has been ranked up)
     training_level: int = 0       # 0..30
@@ -33,58 +40,44 @@ class Player(SQLModel, table=True):
     physical: float = 50
 
     # Eligible positions, e.g. ["ST", "CF"]. First entry is treated as the natural one.
-    positions: list[str] = Field(default_factory=list, sa_column=Column(JSON))
-
+    positions: list = field(default_factory=list)
     # Positions that become eligible on the NEXT rank up (unlock mechanic). Optional.
-    rankup_positions: list[str] = Field(default_factory=list, sa_column=Column(JSON))
-
+    rankup_positions: list = field(default_factory=list)
     # Up to two play styles: [{"name": "Rapid", "plus": false}, ...]
-    playstyles: list[dict] = Field(default_factory=list, sa_column=Column(JSON))
-
-    # Optional per-player growth override: {"pace": 0.6, ...}. Null -> use rules/growth.json default.
-    growth_override: Optional[dict] = Field(default=None, sa_column=Column(JSON))
-
+    playstyles: list = field(default_factory=list)
+    # Optional per-player growth override: {"pace": 0.6, ...}. None -> use rules/growth.json.
+    growth_override: Optional[dict] = None
     # Unspent skill points available to allocate.
     skill_points: int = 0
-
     notes: str = ""
 
+    id: Optional[int] = None
 
-class PlayerRead(SQLModel):
-    """Shape returned to the frontend."""
-    id: int
-    name: str
-    ovr: int
-    rank: int
-    training_level: int
-    pace: float
-    shooting: float
-    passing: float
-    dribbling: float
-    defending: float
-    physical: float
-    positions: list[str]
-    rankup_positions: list[str]
-    playstyles: list[dict]
-    growth_override: Optional[dict]
-    skill_points: int
-    notes: str
+    def to_dict(self) -> dict:
+        return asdict(self)
 
 
-class PlayerCreate(SQLModel):
-    name: str
-    ovr: int = 50
-    rank: int = 0
-    training_level: int = 0
-    pace: float = 50
-    shooting: float = 50
-    passing: float = 50
-    dribbling: float = 50
-    defending: float = 50
-    physical: float = 50
-    positions: list[str] = []
-    rankup_positions: list[str] = []
-    playstyles: list[dict] = []
-    growth_override: Optional[dict] = None
-    skill_points: int = 0
-    notes: str = ""
+def _coerce(field_name: str, value):
+    """Light coercion so numbers arriving as strings/None still land sensibly."""
+    if value is None:
+        return None
+    if field_name in ("ovr", "rank", "training_level", "skill_points"):
+        try:
+            return int(float(value))
+        except (TypeError, ValueError):
+            return 0
+    if field_name in MAIN_STATS:
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return 0.0
+    return value
+
+
+def player_from_dict(data: dict, base: Optional[Player] = None) -> Player:
+    """Build a Player from client JSON, or update `base` in place-ish."""
+    p = base or Player()
+    for k in EDITABLE_FIELDS:
+        if k in data and data[k] is not None:
+            setattr(p, k, _coerce(k, data[k]))
+    return p
