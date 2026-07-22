@@ -1,0 +1,7 @@
+{
+  "verified": false,
+  "note": "Effect of a single rank up (rank 0..5). ovr_gain[r] = OVR gained going from rank r to r+1. stat_gain_per_rank is a flat bump added to every main stat on each rank up. These numbers are placeholders - FC Mobile's real rank-up gains were not verifiable from a free public source. Edit to match what you observe in-game.",
+  "max_rank": 5,
+  "ovr_gain": [1, 1, 1, 1, 1],
+  "stat_gain_per_rank": 1.0
+}

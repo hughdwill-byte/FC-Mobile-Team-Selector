@@ -1,0 +1,13 @@
+{
+  "verified": false,
+  "note": "Skill points model. In-game the skill tree boosts specific attributes; the exact node-by-node effects were not verifiable from a free public source, so this uses a simplified model: one skill point spent on a main stat raises that stat by 'gain_per_point'. The upgrade planner treats 'spend 1 point on stat X for player P' as a candidate upgrade. Edit gain_per_point (or per-stat overrides) to taste.",
+  "gain_per_point": 1.0,
+  "per_stat_gain": {
+    "pace": 1.0,
+    "shooting": 1.0,
+    "passing": 1.0,
+    "dribbling": 1.0,
+    "defending": 1.0,
+    "physical": 1.0
+  }
+}

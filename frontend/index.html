@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>FC Mobile Squad Optimizer</title>
+  <link rel="stylesheet" href="/css/styles.css" />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><text y='14' font-size='14'>⚽</text></svg>" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand"><span class="ball">⚽</span> FC Mobile <b>Squad Optimizer</b></div>
+    <nav id="tabs" class="tabs">
+      <button class="tab" data-view="squad">Best XI</button>
+      <button class="tab" data-view="players">Players</button>
+      <button class="tab" data-view="upgrades">Upgrades</button>
+      <button class="tab" data-view="gaps">Gaps</button>
+      <button class="tab" data-view="bench">Bench</button>
+      <button class="tab" data-view="rules">Rules</button>
+      <button class="tab" data-view="data">Data</button>
+    </nav>
+    <div class="topbar-right">
+      <span id="player-count" class="pill">0 players</span>
+      <button id="btn-refresh" class="btn ghost" title="Recompute (r)">↻</button>
+    </div>
+  </header>
+
+  <div id="toast" class="toast"></div>
+  <main id="app"></main>
+
+  <!-- Player editor drawer -->
+  <div id="drawer" class="drawer hidden">
+    <div class="drawer-panel">
+      <div class="drawer-head">
+        <h2 id="drawer-title">Add player</h2>
+        <button id="drawer-close" class="btn ghost">✕</button>
+      </div>
+      <div id="drawer-body" class="drawer-body"></div>
+      <div class="drawer-foot">
+        <button id="player-save" class="btn primary">Save (Ctrl+Enter)</button>
+        <button id="player-cancel" class="btn ghost">Cancel</button>
+        <span id="player-delete-wrap"><button id="player-delete" class="btn danger">Delete</button></span>
+      </div>
+    </div>
+  </div>
+
+  <footer class="footer">
+    Local &amp; offline · your data lives in <code>data/fcmobile.sqlite3</code> ·
+    numbers flagged <span class="badge warn">UNVERIFIED</span> are placeholders you can edit under <b>Rules</b>.
+  </footer>
+
+  <script src="/js/api.js"></script>
+  <script src="/js/app.js"></script>
+</body>
+</html>

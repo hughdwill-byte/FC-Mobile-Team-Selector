@@ -1,0 +1,29 @@
+{
+  "verified": false,
+  "note": "Each formation lists exactly 11 slot positions. The optimiser solves an assignment for EVERY formation in this list, so add or remove formations here to match your game version. FC Mobile's exact formation set/count was not verifiable from a free public source, so this is a representative set of standard formations - edit freely. Slot position codes must exist in positions.json.",
+  "formations": [
+    { "name": "4-4-2",            "slots": ["GK","RB","CB","CB","LB","RM","CM","CM","LM","ST","ST"] },
+    { "name": "4-4-1-1",          "slots": ["GK","RB","CB","CB","LB","RM","CM","CM","LM","CF","ST"] },
+    { "name": "4-3-3",            "slots": ["GK","RB","CB","CB","LB","CM","CM","CM","RW","ST","LW"] },
+    { "name": "4-3-3 (Defend)",   "slots": ["GK","RB","CB","CB","LB","CDM","CM","CM","RW","ST","LW"] },
+    { "name": "4-3-3 (Attack)",   "slots": ["GK","RB","CB","CB","LB","CM","CM","CAM","RW","ST","LW"] },
+    { "name": "4-2-3-1",          "slots": ["GK","RB","CB","CB","LB","CDM","CDM","RW","CAM","LW","ST"] },
+    { "name": "4-2-3-1 (Wide)",   "slots": ["GK","RB","CB","CB","LB","CDM","CDM","RM","CAM","LM","ST"] },
+    { "name": "4-1-2-1-2 (Diamond)","slots": ["GK","RB","CB","CB","LB","CDM","CM","CM","CAM","ST","ST"] },
+    { "name": "4-3-1-2",          "slots": ["GK","RB","CB","CB","LB","CM","CM","CM","CAM","ST","ST"] },
+    { "name": "4-5-1",            "slots": ["GK","RB","CB","CB","LB","RM","CM","CM","CM","LM","ST"] },
+    { "name": "4-5-1 (Attack)",   "slots": ["GK","RB","CB","CB","LB","RM","CM","CAM","CM","LM","ST"] },
+    { "name": "4-1-4-1",          "slots": ["GK","RB","CB","CB","LB","CDM","RM","CM","CM","LM","ST"] },
+    { "name": "4-2-2-2",          "slots": ["GK","RB","CB","CB","LB","CDM","CDM","CAM","CAM","ST","ST"] },
+    { "name": "4-2-4",            "slots": ["GK","RB","CB","CB","LB","CM","CM","RW","LW","ST","ST"] },
+    { "name": "4-3-2-1 (Tree)",   "slots": ["GK","RB","CB","CB","LB","CDM","CM","CM","CAM","CAM","ST"] },
+    { "name": "3-5-2",            "slots": ["GK","CB","CB","CB","RM","CDM","CM","CM","LM","ST","ST"] },
+    { "name": "3-4-3",            "slots": ["GK","CB","CB","CB","RM","CM","CM","LM","RW","ST","LW"] },
+    { "name": "3-4-1-2",          "slots": ["GK","CB","CB","CB","RM","CM","CM","LM","CAM","ST","ST"] },
+    { "name": "3-4-2-1",          "slots": ["GK","CB","CB","CB","RM","CM","CM","LM","CAM","CAM","ST"] },
+    { "name": "5-3-2",            "slots": ["GK","RWB","CB","CB","CB","LWB","CM","CM","CM","ST","ST"] },
+    { "name": "5-4-1",            "slots": ["GK","RWB","CB","CB","CB","LWB","RM","CM","CM","LM","ST"] },
+    { "name": "5-2-1-2",          "slots": ["GK","RWB","CB","CB","CB","LWB","CM","CM","CAM","ST","ST"] },
+    { "name": "5-2-3",            "slots": ["GK","RWB","CB","CB","CB","LWB","CM","CM","RW","ST","LW"] }
+  ]
+}

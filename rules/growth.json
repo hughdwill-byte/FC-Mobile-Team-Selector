@@ -1,0 +1,14 @@
+{
+  "verified": false,
+  "note": "Default training growth curve: how much each main stat rises PER training level (0-30). FC Mobile's real per-level gains differ PER PLAYER and were not verifiable from a free public source. This is a placeholder default; each player can override it with their own growth values in the UI (Player form -> Growth). Effective stat at a hypothetical level = current stat + gain_per_level * (target_level - current_level).",
+  "default_gain_per_level": {
+    "pace": 0.4,
+    "shooting": 0.4,
+    "passing": 0.4,
+    "dribbling": 0.4,
+    "defending": 0.4,
+    "physical": 0.4
+  },
+  "max_training_level": 30,
+  "rankup_unlocks_every_levels": 5
+}

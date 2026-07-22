@@ -1,0 +1,15 @@
+{
+  "verified": false,
+  "note": "List of position codes used by the app, plus how out-of-position players are penalised. Eligibility comes from each player's own position list. Penalties are a tuning choice, not a game formula - adjust to taste.",
+  "positions": [
+    "GK",
+    "RB", "LB", "CB", "RWB", "LWB",
+    "CDM", "CM", "CAM",
+    "RM", "LM",
+    "RW", "LW",
+    "CF", "ST"
+  ],
+  "out_of_position_penalty": 0.82,
+  "gk_mismatch_penalty": 0.05,
+  "note_penalty": "out_of_position_penalty multiplies a player's slot score when they play a slot that is NOT in their eligible positions. gk_mismatch_penalty is applied when a non-GK is forced into GK or a GK is forced outfield (effectively prohibitive)."
+}

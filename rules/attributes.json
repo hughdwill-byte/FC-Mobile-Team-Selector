@@ -1,0 +1,12 @@
+{
+  "verified": false,
+  "note": "OPTIONAL advanced roll-up: how sub-attributes combine into the six main stats. The core app scores from the six MAIN stats you enter directly (fast for manual entry). This file scaffolds the detailed attribute->main-stat mapping for a future 'attribute mode'. The weights and the exact attribute list are NOT verified against FC Mobile and are provided as a starting point only.",
+  "rollup": {
+    "pace":      { "acceleration": 0.55, "sprint_speed": 0.45 },
+    "shooting":  { "finishing": 0.30, "shot_power": 0.20, "long_shots": 0.15, "positioning": 0.15, "volleys": 0.10, "penalties": 0.10 },
+    "passing":   { "short_passing": 0.30, "vision": 0.25, "crossing": 0.20, "long_passing": 0.15, "curve": 0.10 },
+    "dribbling": { "ball_control": 0.35, "dribbling": 0.35, "agility": 0.15, "balance": 0.15 },
+    "defending": { "marking": 0.30, "standing_tackle": 0.30, "interceptions": 0.25, "sliding_tackle": 0.15 },
+    "physical":  { "strength": 0.40, "stamina": 0.25, "aggression": 0.20, "jumping": 0.15 }
+  }
+}

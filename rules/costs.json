@@ -1,0 +1,22 @@
+{
+  "verified": false,
+  "note": "Upgrade cost curves. ALL NUMBERS HERE ARE PLACEHOLDERS - FC Mobile's real cost scaling was not verifiable from a free public source. The app shows an 'UNVERIFIED' badge wherever these are used. Edit them in the UI (Rules -> Costs) to match what the game charges you.",
+  "training": {
+    "note": "Cost to raise a player from training level L to L+1. Index 0 = level 0->1, ... index 29 = level 29->30.",
+    "per_level": [50, 60, 70, 85, 100, 120, 140, 165, 190, 220, 250, 285, 320, 360, 400, 445, 490, 540, 590, 645, 700, 760, 820, 885, 950, 1020, 1090, 1165, 1240, 1320]
+  },
+  "rankup": {
+    "note": "Cost (rank-up items) to go from rank r to r+1. Index 0 = rank 0->1, ... index 4 = rank 4->5.",
+    "per_rank": [1, 2, 4, 7, 12]
+  },
+  "skill": {
+    "note": "Cost per skill point spent.",
+    "per_point": 1
+  },
+  "normalization": {
+    "note": "For the COMBINED upgrade ranking, costs from different currencies are converted into one common 'unit' by these multipliers, because 1 training-XP, 1 rank item and 1 skill point are not worth the same. These conversions are a rough guess - edit them to reflect how scarce each resource is for you. Combined cost = raw_cost * (multiplier for its type).",
+    "training_unit": 1.0,
+    "rankup_unit": 200.0,
+    "skill_unit": 100.0
+  }
+}

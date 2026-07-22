@@ -1,0 +1,27 @@
+{
+  "verified": false,
+  "note": "PlayStyles and their effect on the six main stats. FC Mobile has two tiers: a normal PlayStyle and a stronger 'PlayStyle+'. The real per-attribute effects were not verifiable from a free public source, so these are placeholder flat bonuses added to the relevant main stat(s). 'plus_multiplier' scales the bonus for the '+' tier. A player can hold up to two PlayStyles (each optionally '+'). Add/adjust styles freely.",
+  "plus_multiplier": 2.0,
+  "styles": {
+    "Rapid":            { "pace": 3 },
+    "Acceleration":     { "pace": 2 },
+    "Finesse Expert":   { "shooting": 3 },
+    "Clinical Finisher":{ "shooting": 3 },
+    "Power Shot":       { "shooting": 2, "physical": 1 },
+    "Chip Shot":        { "shooting": 2 },
+    "Penalty Expert":   { "shooting": 1 },
+    "Incisive Pass":    { "passing": 3 },
+    "Pinged Pass":      { "passing": 2 },
+    "Long Ball Pass":   { "passing": 2 },
+    "Tiki Taka":        { "passing": 2, "dribbling": 1 },
+    "Technical":        { "dribbling": 3 },
+    "Trickster":        { "dribbling": 2 },
+    "Press Proven":     { "defending": 2, "physical": 1 },
+    "Interceptor":      { "defending": 3 },
+    "Block":            { "defending": 2 },
+    "Anticipate":       { "defending": 2 },
+    "Bruiser":          { "physical": 3 },
+    "Aerial":           { "physical": 2, "defending": 1 },
+    "Trivela":          { "passing": 1, "shooting": 1 }
+  }
+}
