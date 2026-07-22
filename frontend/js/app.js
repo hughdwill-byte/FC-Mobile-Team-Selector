@@ -36,7 +36,7 @@ function persist() {
     localStorage.setItem(LS_KEY, JSON.stringify({
       view: State.view, selectedFormation: State.selectedFormation,
       upkind: State._upkind, rulefile: State._rulefile, search: State._search,
-      sort: State.sort,
+      sort: State.sort, trainingXp: State._trainingXp,
     }));
   } catch (e) { /* private mode / disabled storage: ignore */ }
 }
@@ -49,6 +49,7 @@ function restoreUi() {
     if (d.rulefile) State._rulefile = d.rulefile;
     if (typeof d.search === "string") State._search = d.search;
     if (d.sort && d.sort.key) State.sort = d.sort;
+    if (typeof d.trainingXp === "number") State._trainingXp = d.trainingXp;
   } catch (e) { /* ignore */ }
 }
 
@@ -422,6 +423,28 @@ async function renderUpgrades(app) {
 
   const tabBtn = (k, label) => `<button class="btn small ${State._upkind === k ? "primary" : "ghost"}" data-uk="${k}">${label}</button>`;
 
+  const normalTable = `
+    <div class="panel" style="padding:0;overflow-x:auto">
+      <table><thead><tr><th class="num">#</th><th>Do this next</th><th class="num">Squad +</th>
+        <th class="num">Cost</th><th class="num">Gain / cost</th><th class="num">New score</th></tr></thead>
+      <tbody>${rows || `<tr><td colspan="6" class="empty-state">No improving upgrades found (everything is maxed or gives no gain).</td></tr>`}</tbody></table>
+    </div>`;
+
+  const trainingPlanner = `
+    <div class="panel">
+      <h3>Training budget planner</h3>
+      <p class="hint">Enter how much training XP you have. The planner spends it in best-value
+      order — the biggest squad-score gain per XP first — across your whole club, not one level at a time.</p>
+      <div class="toolbar">
+        <input type="number" id="xp-input" placeholder="XP available, e.g. 5000" min="0"
+          value="${State._trainingXp || ""}" style="max-width:220px;background:var(--panel);border:1px solid var(--line);color:var(--txt);padding:8px 10px;border-radius:8px" />
+        <button class="btn primary" id="xp-go">Plan training</button>
+      </div>
+    </div>
+    <div id="train-results"></div>`;
+
+  const content = State._upkind === "training" ? trainingPlanner : normalTable;
+
   app.innerHTML = `
     <div class="section-title"><h2>Upgrade plan ${warn}</h2>
       <span class="hint">Baseline squad score <b>${d.baseline_squad_score.toFixed(1)}</b> · ranked by squad-score gain per resource</span></div>
@@ -434,13 +457,69 @@ async function renderUpgrades(app) {
     ${d.costs_unverified ? `<div class="panel" style="border-color:#5a4a1e"><b>Costs are placeholders.</b>
       The gain-per-cost ranking is only as good as the cost curves in <code>rules/costs.json</code>.
       Edit them under the <b>Rules</b> tab to match your game, then recompute.</div>` : ""}
-    <div class="panel" style="padding:0;overflow-x:auto">
-      <table><thead><tr><th class="num">#</th><th>Do this next</th><th class="num">Squad +</th>
-        <th class="num">Cost</th><th class="num">Gain / cost</th><th class="num">New score</th></tr></thead>
-      <tbody>${rows || `<tr><td colspan="6" class="empty-state">No improving upgrades found (everything is maxed or gives no gain).</td></tr>`}</tbody></table>
-    </div>`;
+    ${content}`;
 
   $$("[data-uk]").forEach((b) => (b.onclick = () => { State._upkind = b.dataset.uk; persist(); renderUpgrades(app); }));
+
+  if (State._upkind === "training") {
+    const go = () => {
+      const xp = Math.max(0, parseFloat($("#xp-input").value) || 0);
+      State._trainingXp = xp;
+      persist();
+      loadTrainingPlan();
+    };
+    $("#xp-go").onclick = go;
+    $("#xp-input").onkeydown = (e) => { if (e.key === "Enter") go(); };
+    if (State._trainingXp > 0) loadTrainingPlan();
+  }
+}
+
+async function loadTrainingPlan() {
+  const box = $("#train-results");
+  if (!box) return;
+  box.innerHTML = "<div class='hint' style='padding:8px'>Planning…</div>";
+  let d;
+  try { d = await API.trainingPlan(State._trainingXp); }
+  catch (e) { box.innerHTML = `<div class='panel'>Error: ${esc(e.message)}</div>`; return; }
+
+  if (!d.steps || !d.steps.length) {
+    box.innerHTML = `<div class="panel empty-state">No worthwhile training found for that budget
+      (players may be maxed, or the XP is less than the cheapest useful level).</div>`;
+    return;
+  }
+  const rows = d.steps.map((s, i) => `<tr>
+    <td class="num">${i + 1}</td>
+    <td><b>${esc(s.player_name)}</b> <span class="hint">${s.from_level} → ${s.to_level} (${s.levels} lvl${s.levels === 1 ? "" : "s"})</span></td>
+    <td class="num gain-pos">+${s.gain.toFixed(2)}</td>
+    <td class="num">${s.cost.toLocaleString()} <span class="hint">XP</span></td>
+    <td class="num rating hi">${s.gain_per_cost.toFixed(4)}</td>
+    <td class="num">${s.cumulative_xp.toLocaleString()}</td>
+  </tr>`).join("");
+  const reason = d.stopped_reason === "budget"
+    ? "Budget spent — more worthwhile training is available if you get more XP."
+    : d.stopped_reason === "step_cap"
+      ? "Reached the planner's step limit."
+      : "Spent everything worth spending — remaining XP wouldn't improve the squad.";
+
+  box.innerHTML = `
+    <div class="row">
+      <div class="panel col"><h3>Summary</h3>
+        <ul class="mini-list">
+          <li><span>XP budget</span><b>${d.xp_budget.toLocaleString()}</b></li>
+          <li><span>XP spent</span><b>${d.spent.toLocaleString()}</b></li>
+          <li><span>XP left over</span><b>${d.remaining.toLocaleString()}</b></li>
+          <li><span>Levels trained</span><b>${d.levels_trained}</b></li>
+          <li><span>Squad score</span><b>${d.baseline_squad_score.toFixed(1)} → ${d.final_squad_score.toFixed(1)}</b></li>
+          <li><span>Total gain</span><b class="gain-pos">+${d.total_gain.toFixed(2)}</b></li>
+        </ul>
+        <p class="hint" style="margin-top:8px">${reason}</p>
+      </div>
+      <div class="col" style="flex:2 1 560px"><div class="panel" style="padding:0;overflow-x:auto">
+        <table><thead><tr><th class="num">#</th><th>Train</th><th class="num">Squad +</th>
+          <th class="num">Cost</th><th class="num">Gain / XP</th><th class="num">XP so far</th></tr></thead>
+        <tbody>${rows}</tbody></table>
+      </div></div>
+    </div>`;
 }
 
 // ------------------------------------------------------------------ Gaps

@@ -1,5 +1,5 @@
 """Upgrade-planner tests."""
-from backend.upgrades import plan_upgrades
+from backend.upgrades import plan_training_budget, plan_upgrades
 from tests.test_optimizer import _squad_433
 from tests.test_scoring import mk
 
@@ -41,3 +41,26 @@ def test_upgrading_a_benched_player_can_flip_them_into_the_xi():
     flips = [c for c in plan["combined"]
              if c["player_name"] == "BenchCB" and c["kind"] == "training"]
     assert flips and flips[0]["gain"] > 0
+
+
+def test_training_budget_respects_budget_and_scales():
+    players = _squad_433()
+    small = plan_training_budget(players, 300)
+    assert small["spent"] <= 300
+    assert small["total_gain"] >= 0
+    assert all(step["cost"] <= 300 for step in small["steps"])
+
+    big = plan_training_budget(players, 5000)
+    assert big["spent"] <= 5000
+    # A bigger budget can never do worse than a smaller one.
+    assert big["total_gain"] >= small["total_gain"]
+
+
+def test_training_budget_zero_and_maxed():
+    assert plan_training_budget(_squad_433(), 0)["steps"] == []
+    maxed = _squad_433()
+    for p in maxed:
+        p.training_level = 30
+    plan = plan_training_budget(maxed, 10000)
+    assert plan["steps"] == []
+    assert plan["stopped_reason"] == "no_more_value"

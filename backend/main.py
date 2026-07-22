@@ -140,6 +140,18 @@ def upgrade_plan(limit: int = 40):
     return plan
 
 
+@app.get("/api/training-plan")
+def training_plan(xp: float = 0):
+    states = _states()
+    if len(states) < 11:
+        return {"enough_players": False, "have": len(states), "need": 11}
+    if xp <= 0:
+        return {"enough_players": True, "xp_budget": 0, "steps": [], "needs_budget": True}
+    plan = upgrades_mod.plan_training_budget(states, xp)
+    plan["enough_players"] = True
+    return plan
+
+
 @app.get("/api/gaps")
 def gaps():
     states = _states()

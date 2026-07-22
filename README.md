@@ -30,6 +30,13 @@ into the XI can be worth more than improving a starter.
 
 ![Upgrade plan](docs/images/03-upgrades.png)
 
+**Training budget planner:** tell it how much training XP you have and it returns the best
+*ordered* sequence to spend it on — the biggest squad-score gain per XP first, spread across
+your whole club rather than one level at a time — with a running total so you can stop
+whenever your XP runs out.
+
+![Training budget planner](docs/images/09-training-planner.png)
+
 ### Players — dense, fast, keyboard-friendly
 Add or edit a player in seconds. Click any row to open the editor.
 
@@ -136,6 +143,11 @@ and the planner spends it on the stat that matters most for that player — the 
 **PlayStyles** boost first, then their **position’s** key stats (from the attribute map in
 [`rules/attributes.json`](rules/attributes.json)). **Training transfer** (moving training
 between players for a small fee) is documented in [`rules/costs.json`](rules/costs.json).
+
+The **Training** tab also has a **budget planner**: enter your available XP and it greedily
+spends it in best-value order (re-optimising after each level), returning an ordered plan
+with a running XP total — so you train the right players to the right levels, not just the
+next single level.
 
 ---
 

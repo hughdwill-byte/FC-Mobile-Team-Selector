@@ -27,6 +27,7 @@ const API = {
   duplicatePlayer(id) { return this.post(`/api/players/${id}/duplicate`); },
   squad(top = 5) { return this.get(`/api/squad?top=${top}`); },
   upgrades(limit = 40) { return this.get(`/api/upgrades?limit=${limit}`); },
+  trainingPlan(xp) { return this.get(`/api/training-plan?xp=${encodeURIComponent(xp)}`); },
   gaps() { return this.get("/api/gaps"); },
   bench(size = 7) { return this.get(`/api/bench?size=${size}`); },
   rule(name) { return this.get(`/api/rules/${name}`); },

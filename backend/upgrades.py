@@ -28,6 +28,108 @@ def _swap(states: list[PlayerState], index: int, new_state: PlayerState) -> list
     return out
 
 
+def plan_training_budget(states: list[PlayerState], xp_budget: float, max_steps: int = 300) -> dict:
+    """Given an XP budget, return the best ORDERED sequence of training to spend it on.
+
+    Greedy: at each step, look at 'train one more level' for every player, pick the one
+    with the best squad-score gain per XP that we can still afford, apply it, and repeat
+    until the budget can't buy another worthwhile level. This naturally spreads XP across
+    players (and levels) in best-value order rather than dumping it all on one card.
+    """
+    costs = rules_mod.load("costs")
+    training_costs = costs["training"]["per_level"]
+    max_level = rules_mod.load("growth").get("max_training_level", 30)
+
+    def level_cost(lvl: int) -> float:
+        return training_costs[lvl] if lvl < len(training_costs) else training_costs[-1]
+
+    work = [s.copy() for s in states]
+    baseline = current = best_squad_score(work)
+    remaining = float(xp_budget)
+    raw: list[dict] = []
+
+    for _ in range(max_steps):
+        best = None  # (gpc, gain, cost, idx, from_level, new_state, new_score)
+        for idx, st in enumerate(work):
+            lvl = st.training_level
+            if lvl >= max_level:
+                continue
+            cost = level_cost(lvl)
+            if cost > remaining:
+                continue
+            ns = with_training_level(st, 1)
+            if ns is None:
+                continue
+            score = best_squad_score(_swap(work, idx, ns))
+            gain = score - current
+            if gain <= 1e-9:
+                continue
+            gpc = gain / cost
+            if best is None or gpc > best[0]:
+                best = (gpc, gain, cost, idx, lvl, ns, score)
+
+        if best is None:
+            break
+        _gpc, gain, cost, idx, lvl, ns, score = best
+        work[idx] = ns
+        current = score
+        remaining -= cost
+        raw.append({
+            "player_id": ns.id, "player_name": ns.name,
+            "from_level": lvl, "to_level": lvl + 1, "gain": gain, "cost": cost,
+        })
+
+    # Why did we stop? (budget ran out vs. no more worthwhile training)
+    reason = "no_more_value"
+    if len(raw) < max_steps:
+        for idx, st in enumerate(work):
+            lvl = st.training_level
+            if lvl >= max_level:
+                continue
+            ns = with_training_level(st, 1)
+            if ns is None:
+                continue
+            if best_squad_score(_swap(work, idx, ns)) - current > 1e-9:
+                reason = "budget"   # a worthwhile level exists, we just can't afford it
+                break
+    else:
+        reason = "step_cap"
+
+    # Merge consecutive levels for the same player into a single "L -> M" row.
+    merged: list[dict] = []
+    for s in raw:
+        if merged and merged[-1]["player_id"] == s["player_id"] and merged[-1]["to_level"] == s["from_level"]:
+            merged[-1]["to_level"] = s["to_level"]
+            merged[-1]["gain"] += s["gain"]
+            merged[-1]["cost"] += s["cost"]
+        else:
+            merged.append(dict(s))
+
+    cum_xp = cum_gain = 0.0
+    for m in merged:
+        cum_xp += m["cost"]
+        cum_gain += m["gain"]
+        m["cumulative_xp"] = round(cum_xp)
+        m["cumulative_gain"] = round(cum_gain, 3)
+        m["gain"] = round(m["gain"], 3)
+        m["cost"] = round(m["cost"])
+        m["levels"] = m["to_level"] - m["from_level"]
+        m["gain_per_cost"] = round((m["gain"] / m["cost"]) if m["cost"] else 0.0, 5)
+
+    return {
+        "xp_budget": round(float(xp_budget)),
+        "spent": round(float(xp_budget) - remaining),
+        "remaining": round(remaining),
+        "baseline_squad_score": round(baseline, 3),
+        "final_squad_score": round(current, 3),
+        "total_gain": round(current - baseline, 3),
+        "levels_trained": sum(m["levels"] for m in merged),
+        "steps": merged,
+        "stopped_reason": reason,
+        "costs_unverified": not costs.get("verified", False),
+    }
+
+
 def plan_upgrades(states: list[PlayerState], limit: int = 40) -> dict:
     costs = rules_mod.load("costs")
     training_costs = costs["training"]["per_level"]
