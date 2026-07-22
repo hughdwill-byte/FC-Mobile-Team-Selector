@@ -1,10 +1,11 @@
 {
   "verified": false,
-  "note": "Per-position weighting of the six main stats, used by the default scoring function. These are TUNING weights (a modelling choice), not sourced game data. Order does not matter; unknown positions fall back to 'DEFAULT'. Weights are normalised to sum to 1 at load time, so they need not sum to exactly 1 here. GK is scored from OVR (see scoring.py) and is listed only for completeness.",
+  "note": "Per-position weighting of the six main stats, used by the default scoring function. These are TUNING weights (a modelling choice), not sourced game data. Order does not matter; unknown positions fall back to 'DEFAULT'. Weights are normalised to sum to 1 at load time, so they need not sum to exactly 1 here.",
+  "gk_note": "GOALKEEPERS use different main stats: Diving, Handling, Kicking, Reflexes, Positioning, Physical. The app stores them in the same six columns in this order -> pace=Diving, shooting=Handling, passing=Kicking, dribbling=Reflexes, defending=Positioning, physical=Physical. The GK weights below are written against those column names but represent GK-stat importance (Reflexes/Diving/Handling/Positioning matter most, Kicking least). A GK is scored from these; if all six are blank the app falls back to OVR.",
   "stats": ["pace", "shooting", "passing", "dribbling", "defending", "physical"],
   "weights": {
     "DEFAULT": { "pace": 0.2, "shooting": 0.15, "passing": 0.2, "dribbling": 0.2, "defending": 0.1, "physical": 0.15 },
-    "GK":  { "pace": 0.0, "shooting": 0.0, "passing": 0.1, "dribbling": 0.0, "defending": 0.4, "physical": 0.5 },
+    "GK":  { "pace": 0.20, "shooting": 0.18, "passing": 0.05, "dribbling": 0.25, "defending": 0.22, "physical": 0.10 },
     "ST":  { "pace": 0.20, "shooting": 0.35, "passing": 0.05, "dribbling": 0.20, "defending": 0.00, "physical": 0.20 },
     "CF":  { "pace": 0.15, "shooting": 0.30, "passing": 0.15, "dribbling": 0.25, "defending": 0.00, "physical": 0.15 },
     "RW":  { "pace": 0.30, "shooting": 0.20, "passing": 0.10, "dribbling": 0.30, "defending": 0.00, "physical": 0.10 },

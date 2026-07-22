@@ -1,6 +1,6 @@
 {
   "verified": false,
-  "note": "OPTIONAL advanced roll-up: how sub-attributes combine into the six main stats. The core app scores from the six MAIN stats you enter directly (fast for manual entry). This file scaffolds the detailed attribute->main-stat mapping for a future 'attribute mode'. The weights and the exact attribute list are NOT verified against FC Mobile and are provided as a starting point only.",
+  "note": "Reference map of ATTRIBUTES (minor stats) -> which of the six main stats they roll into, plus the key attributes per position. Skill points and training raise these attributes, which is why the planner (skills.json position_priority) targets the main stats fed by a position's key attributes. The core app scores from the six MAIN stats you enter directly, so entering individual attributes is optional; this file documents the relationships and drives the per-position priorities. Attribute lists follow public FC/FC Mobile attribute guides and are not individually verified against live FC Mobile values.",
   "rollup": {
     "pace":      { "acceleration": 0.55, "sprint_speed": 0.45 },
     "shooting":  { "finishing": 0.30, "shot_power": 0.20, "long_shots": 0.15, "positioning": 0.15, "volleys": 0.10, "penalties": 0.10 },
@@ -8,5 +8,27 @@
     "dribbling": { "ball_control": 0.35, "dribbling": 0.35, "agility": 0.15, "balance": 0.15 },
     "defending": { "marking": 0.30, "standing_tackle": 0.30, "interceptions": 0.25, "sliding_tackle": 0.15 },
     "physical":  { "strength": 0.40, "stamina": 0.25, "aggression": 0.20, "jumping": 0.15 }
+  },
+  "gk_rollup": {
+    "note": "Goalkeeper main stats and the columns the app stores them in (pace=Diving, shooting=Handling, passing=Kicking, dribbling=Reflexes, defending=Positioning, physical=Physical).",
+    "diving": "pace", "handling": "shooting", "kicking": "passing",
+    "reflexes": "dribbling", "positioning": "defending", "physical": "physical"
+  },
+  "position_key_attributes": {
+    "GK":  ["reflexes", "diving", "handling", "positioning"],
+    "ST":  ["finishing", "shot_power", "positioning", "sprint_speed", "ball_control"],
+    "CF":  ["finishing", "ball_control", "vision", "dribbling", "short_passing"],
+    "RW":  ["acceleration", "sprint_speed", "dribbling", "ball_control", "agility"],
+    "LW":  ["acceleration", "sprint_speed", "dribbling", "ball_control", "agility"],
+    "RM":  ["acceleration", "crossing", "dribbling", "short_passing", "sprint_speed"],
+    "LM":  ["acceleration", "crossing", "dribbling", "short_passing", "sprint_speed"],
+    "CAM": ["vision", "short_passing", "ball_control", "long_shots", "dribbling"],
+    "CM":  ["short_passing", "vision", "ball_control", "stamina", "interceptions"],
+    "CDM": ["interceptions", "standing_tackle", "strength", "short_passing", "stamina"],
+    "RB":  ["sprint_speed", "standing_tackle", "crossing", "stamina", "interceptions"],
+    "LB":  ["sprint_speed", "standing_tackle", "crossing", "stamina", "interceptions"],
+    "RWB": ["sprint_speed", "crossing", "stamina", "standing_tackle", "acceleration"],
+    "LWB": ["sprint_speed", "crossing", "stamina", "standing_tackle", "acceleration"],
+    "CB":  ["marking", "standing_tackle", "strength", "interceptions", "jumping"]
   }
 }

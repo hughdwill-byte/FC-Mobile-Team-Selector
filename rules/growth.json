@@ -1,6 +1,6 @@
 {
   "verified": false,
-  "note": "Default training growth curve: how much each main stat rises PER training level (0-30). FC Mobile's real per-level gains differ PER PLAYER and were not verifiable from a free public source. This is a placeholder default; each player can override it with their own growth values in the UI (Player form -> Growth). Effective stat at a hypothetical level = current stat + gain_per_level * (target_level - current_level).",
+  "note": "Default training growth curve: how much each main stat rises PER training level (0-30). Training raises a player's stats; every 5 levels unlocks a rank up, and each rank raises the max training level by 5 (so max level = 5 x rank, capped at 30). FC Mobile's real per-level gains differ PER PLAYER and were not verifiable from a free public source. This is a placeholder default; each player can override it with their own growth values in the UI (Player form -> Growth). You can also move training between players via Training Transfer (see rules/costs.json). Effective stat at a hypothetical level = current stat + gain_per_level * (target_level - current_level).",
   "default_gain_per_level": {
     "pace": 0.4,
     "shooting": 0.4,

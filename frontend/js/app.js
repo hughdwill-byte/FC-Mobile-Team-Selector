@@ -22,6 +22,36 @@ function toast(msg, isErr = false) {
 }
 function ratingClass(v) { return v >= 82 ? "hi" : v >= 74 ? "mid" : "lo"; }
 
+// Goalkeepers use different main stats; the six stat columns are relabelled for them.
+const GK_LABELS = {
+  pace: "Diving", shooting: "Handling", passing: "Kicking",
+  dribbling: "Reflexes", defending: "Positioning", physical: "Physical",
+};
+const statLabel = (stat, isGk) => (isGk ? (GK_LABELS[stat] || stat) : stat);
+
+// ---- UI-state persistence (so a reload lands back where you were) ----
+const LS_KEY = "fcm.ui.v1";
+function persist() {
+  try {
+    localStorage.setItem(LS_KEY, JSON.stringify({
+      view: State.view, selectedFormation: State.selectedFormation,
+      upkind: State._upkind, rulefile: State._rulefile, search: State._search,
+      sort: State.sort,
+    }));
+  } catch (e) { /* private mode / disabled storage: ignore */ }
+}
+function restoreUi() {
+  try {
+    const d = JSON.parse(localStorage.getItem(LS_KEY) || "{}");
+    if (d.view) State.view = d.view;
+    if (typeof d.selectedFormation === "number") State.selectedFormation = d.selectedFormation;
+    if (d.upkind) State._upkind = d.upkind;
+    if (d.rulefile) State._rulefile = d.rulefile;
+    if (typeof d.search === "string") State._search = d.search;
+    if (d.sort && d.sort.key) State.sort = d.sort;
+  } catch (e) { /* ignore */ }
+}
+
 // ------------------------------------------------------------------ boot
 async function boot() {
   try {
@@ -30,12 +60,13 @@ async function boot() {
     document.body.innerHTML = "<p style='padding:40px'>Cannot reach the backend. Is the app running?</p>";
     return;
   }
+  restoreUi();
   wireTabs();
   wireDrawer();
   wireKeys();
   $("#btn-refresh").onclick = () => render();
   await loadPlayers();
-  setView("squad");
+  setView(State.view || "squad");
 }
 
 async function loadPlayers() {
@@ -49,6 +80,7 @@ function wireTabs() {
 function setView(v) {
   State.view = v;
   $$(".tab").forEach((b) => b.classList.toggle("active", b.dataset.view === v));
+  persist();
   render();
 }
 
@@ -97,8 +129,12 @@ function layout(slots) {
   Object.values(groups).forEach((g) => {
     g.sort((a, b) => hintX(a.position) - hintX(b.position) || a.i - b.i);
     const n = g.length;
+    // Wide bands (with L*/R* roles) spread to the touchlines; central bands stay
+    // narrow so pairs/trios of central players don't fly out to the wings.
+    const wide = g.some((s) => /^[LR]/.test(s.position) && s.position !== "GK");
+    const span = n === 1 ? 0 : (wide ? 0.76 : Math.min(0.5, 0.2 * (n - 1)));
     g.forEach((s, k) => {
-      const x = n === 1 ? 0.5 : 0.12 + (0.76 * k) / (n - 1);
+      const x = n === 1 ? 0.5 : 0.5 - span / 2 + (span * k) / (n - 1);
       coords[s.i] = { x, y: BAND_Y[s.position] ?? 0.5 };
     });
   });
@@ -161,7 +197,7 @@ async function renderSquad(app) {
       </div>
     </div>`;
 
-  $$(".formation-item").forEach((it) => (it.onclick = () => { State.selectedFormation = +it.dataset.idx; render(); }));
+  $$(".formation-item").forEach((it) => (it.onclick = () => { State.selectedFormation = +it.dataset.idx; persist(); render(); }));
   $$("[data-pid]").forEach((el) => (el.onclick = () => { const id = +el.dataset.pid; if (id) openEditor(id); }));
 }
 
@@ -206,10 +242,11 @@ function renderPlayers(app) {
 
   $("#add-player").onclick = () => openEditor(null);
   const s = $("#search");
-  s.oninput = () => { State._search = s.value; const pos = s.selectionStart; renderPlayers(app); const ns = $("#search"); ns.focus(); ns.setSelectionRange(pos, pos); };
+  s.oninput = () => { State._search = s.value; persist(); const pos = s.selectionStart; renderPlayers(app); const ns = $("#search"); ns.focus(); ns.setSelectionRange(pos, pos); };
   $$("th[data-sort]").forEach((th) => (th.onclick = () => {
     const k = th.dataset.sort;
     State.sort = { key: k, dir: State.sort.key === k ? -State.sort.dir : (k === "name" || k === "best_position" ? 1 : -1) };
+    persist();
     renderPlayers(app);
   }));
   $$("tr[data-id]").forEach((tr) => (tr.onclick = () => openEditor(+tr.dataset.id)));
@@ -218,10 +255,11 @@ function renderPlayers(app) {
 // ------------------------------------------------------------------ Player editor drawer
 function openEditor(id) {
   const p = id ? State.players.find((x) => x.id === id) : null;
+  // New players start with every field blank (you fill them in).
   State.editing = p ? JSON.parse(JSON.stringify(p)) : {
-    name: "", ovr: 75, rank: 0, training_level: 0,
-    pace: 70, shooting: 70, passing: 70, dribbling: 70, defending: 60, physical: 70,
-    positions: [], rankup_positions: [], playstyles: [], skill_points: 0, notes: "",
+    name: "", ovr: "", rank: "", training_level: "",
+    pace: "", shooting: "", passing: "", dribbling: "", defending: "", physical: "",
+    positions: [], rankup_positions: [], playstyles: [], skill_points: "", notes: "",
   };
   $("#drawer-title").textContent = id ? "Edit player" : "Add player";
   $("#player-delete-wrap").style.display = id ? "" : "none";
@@ -233,6 +271,8 @@ function openEditor(id) {
 function buildEditorForm() {
   const p = State.editing;
   const stats = State.meta.main_stats;
+  const isGk = (p.positions || []).includes("GK");
+  const val = (v) => (v === "" || v === null || v === undefined ? "" : v);
   const posChips = State.meta.positions.map((code) =>
     `<span class="chip pos ${p.positions.includes(code) ? "" : "off"}" data-pos="${code}"
       style="cursor:pointer;${p.positions.includes(code) ? "" : "opacity:.35"}">${code}</span>`).join(" ");
@@ -243,13 +283,14 @@ function buildEditorForm() {
   $("#drawer-body").innerHTML = `
     <div class="field"><label>Name</label><input id="f-name" value="${esc(p.name)}" placeholder="Player name" /></div>
     <div class="grid3">
-      <div class="field"><label>OVR</label><input id="f-ovr" type="number" value="${p.ovr}" /></div>
-      <div class="field"><label>Rank (0–5)</label><input id="f-rank" type="number" min="0" max="5" value="${p.rank}" /></div>
-      <div class="field"><label>Training (0–30)</label><input id="f-training_level" type="number" min="0" max="30" value="${p.training_level}" /></div>
+      <div class="field"><label>OVR</label><input id="f-ovr" type="number" value="${val(p.ovr)}" placeholder="—" /></div>
+      <div class="field"><label>Rank (0–5)</label><input id="f-rank" type="number" min="0" max="5" value="${val(p.rank)}" placeholder="0" /></div>
+      <div class="field"><label>Training (0–30)</label><input id="f-training_level" type="number" min="0" max="30" value="${val(p.training_level)}" placeholder="0" /></div>
     </div>
-    <div class="field"><label>Main stats</label>
+    <div class="field"><label>${isGk ? "Goalkeeper stats" : "Main stats"}</label>
+      ${isGk ? '<div class="hint" style="margin-bottom:6px">GK selected — these six are Diving / Handling / Kicking / Reflexes / Positioning / Physical.</div>' : ""}
       <div class="statgrid">
-        ${stats.map((s) => `<div class="field" style="margin:0"><label>${s}</label><input id="f-${s}" type="number" value="${p[s]}" /></div>`).join("")}
+        ${stats.map((s) => `<div class="field" style="margin:0"><label>${statLabel(s, isGk)}</label><input id="f-${s}" type="number" value="${val(p[s])}" placeholder="—" /></div>`).join("")}
       </div>
     </div>
     <div class="field"><label>Positions (click to toggle)</label><div id="pos-chips">${posChips}</div></div>
@@ -257,15 +298,15 @@ function buildEditorForm() {
       <input id="f-rankup_positions" value="${esc((p.rankup_positions || []).join(", "))}" placeholder="e.g. CF, RW" /></div>
     <div class="grid2">
       <div class="field"><label>PlayStyle 1</label><select id="f-ps0">${psOptions(ps0.name)}</select>
-        <label style="margin-top:6px"><input type="checkbox" id="f-ps0plus" ${ps0.plus ? "checked" : ""}/> PlayStyle+</label></div>
+        <label style="margin-top:6px"><input type="checkbox" id="f-ps0plus" ${ps0.plus ? "checked" : ""}/> Gold (PlayStyle+)</label></div>
       <div class="field"><label>PlayStyle 2</label><select id="f-ps1">${psOptions(ps1.name)}</select>
-        <label style="margin-top:6px"><input type="checkbox" id="f-ps1plus" ${ps1.plus ? "checked" : ""}/> PlayStyle+</label></div>
+        <label style="margin-top:6px"><input type="checkbox" id="f-ps1plus" ${ps1.plus ? "checked" : ""}/> Gold (PlayStyle+)</label></div>
     </div>
-    <div class="field"><label>Skill points available</label><input id="f-skill_points" type="number" min="0" value="${p.skill_points}" /></div>
+    <div class="field"><label>Skill points available</label><input id="f-skill_points" type="number" min="0" value="${val(p.skill_points)}" placeholder="0" /></div>
     <div class="field"><label>Notes</label><textarea id="f-notes" rows="2">${esc(p.notes || "")}</textarea></div>
     <div class="field"><label>Growth override (advanced, per training level — optional)</label>
       <div class="statgrid">
-        ${stats.map((s) => `<div class="field" style="margin:0"><label>${s}</label>
+        ${stats.map((s) => `<div class="field" style="margin:0"><label>${statLabel(s, isGk)}</label>
           <input id="g-${s}" type="number" step="0.1" placeholder="default"
             value="${p.growth_override && p.growth_override[s] != null ? p.growth_override[s] : ""}" /></div>`).join("")}
       </div>
@@ -273,12 +314,34 @@ function buildEditorForm() {
     </div>`;
 
   $$("#pos-chips .chip").forEach((c) => (c.onclick = () => {
+    syncEditor();                       // keep everything the user has typed so far
     const code = c.dataset.pos;
     const arr = State.editing.positions;
     const i = arr.indexOf(code);
     if (i >= 0) arr.splice(i, 1); else arr.push(code);
-    buildEditorForm();
+    buildEditorForm();                  // rebuild (labels may change for GK)
   }));
+}
+
+// Read the current form values back into State.editing WITHOUT coercing blanks to
+// defaults, so rebuilding the form (e.g. after toggling a position) preserves them.
+function syncEditor() {
+  const p = State.editing;
+  const g = (id) => document.getElementById(id);
+  if (!g("f-name")) return;
+  const raw = (id) => { const v = g(id).value; return v === "" ? "" : Number(v); };
+  p.name = g("f-name").value;
+  p.ovr = raw("f-ovr"); p.rank = raw("f-rank"); p.training_level = raw("f-training_level");
+  State.meta.main_stats.forEach((s) => { p[s] = raw("f-" + s); });
+  p.rankup_positions = g("f-rankup_positions").value.split(",").map((x) => x.trim()).filter(Boolean);
+  const psl = [];
+  ["ps0", "ps1"].forEach((k) => { const nm = g("f-" + k).value; if (nm) psl.push({ name: nm, plus: g("f-" + k + "plus").checked }); });
+  p.playstyles = psl;
+  p.skill_points = raw("f-skill_points");
+  p.notes = g("f-notes").value;
+  const growth = {}; let has = false;
+  State.meta.main_stats.forEach((s) => { const v = g("g-" + s).value.trim(); if (v !== "") { growth[s] = Number(v); has = true; } });
+  p.growth_override = has ? growth : null;
 }
 
 function collectEditor() {
@@ -296,7 +359,7 @@ function collectEditor() {
   });
   return {
     name: g("f-name").value.trim(),
-    ovr: Math.round(num("f-ovr", 75)), rank: Math.round(num("f-rank", 0)), training_level: Math.round(num("f-training_level", 0)),
+    ovr: Math.round(num("f-ovr", 0)), rank: Math.round(num("f-rank", 0)), training_level: Math.round(num("f-training_level", 0)),
     pace: num("f-pace"), shooting: num("f-shooting"), passing: num("f-passing"),
     dribbling: num("f-dribbling"), defending: num("f-defending"), physical: num("f-physical"),
     positions: p.positions,
@@ -377,7 +440,7 @@ async function renderUpgrades(app) {
       <tbody>${rows || `<tr><td colspan="6" class="empty-state">No improving upgrades found (everything is maxed or gives no gain).</td></tr>`}</tbody></table>
     </div>`;
 
-  $$("[data-uk]").forEach((b) => (b.onclick = () => { State._upkind = b.dataset.uk; renderUpgrades(app); }));
+  $$("[data-uk]").forEach((b) => (b.onclick = () => { State._upkind = b.dataset.uk; persist(); renderUpgrades(app); }));
 }
 
 // ------------------------------------------------------------------ Gaps
@@ -447,7 +510,7 @@ async function renderRules(app) {
         </div>
       </div></div>
     </div>`;
-  $$("[data-rf]").forEach((it) => (it.onclick = () => { State._rulefile = it.dataset.rf; renderRules(app); }));
+  $$("[data-rf]").forEach((it) => (it.onclick = () => { State._rulefile = it.dataset.rf; persist(); renderRules(app); }));
   $("#rule-save").onclick = async () => {
     try {
       const parsed = JSON.parse($("#rule-text").value);

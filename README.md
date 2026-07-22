@@ -101,11 +101,16 @@ Then launch. Delete the samples any time from the **Players** tab.
 - **Outfield:** a position-weighted average of the six main stats — a CB’s Defending and
   Physical count for far more than their Shooting. Weights live in
   [`rules/stat_weights.json`](rules/stat_weights.json).
-- **GK:** the keeper’s OVR (the six outfield stats don’t describe keepers).
+- **GK:** keepers use their own six stats — **Diving, Handling, Kicking, Reflexes,
+  Positioning, Physical**. Select GK as a position and the stat fields relabel
+  automatically; the keeper is then scored from those (falling back to OVR if you
+  leave them blank).
 - **Out of position:** the score is multiplied by a penalty (a non-keeper in goal, or a
   keeper outfield, is effectively ruled out). See [`rules/positions.json`](rules/positions.json).
-- **PlayStyles** add a small bonus to the relevant main stat(s), with a stronger tier for
-  PlayStyle+. See [`rules/playstyles.json`](rules/playstyles.json).
+- **PlayStyles** add a small bonus to the relevant main stat(s), with a stronger **Gold**
+  tier (PlayStyle+). The full FC Mobile list is in
+  [`rules/playstyles.json`](rules/playstyles.json), grouped by category (Ball Control,
+  Passing, Finishing, Defending, Physical, Goalkeeping).
 
 You entered these decisions as tunable data, so change any weight and recompute — the whole
 scoring model lives in `backend/scoring.py` and the rules files, in one place.
@@ -124,6 +129,13 @@ come in three currencies (training XP, rank-up items, skill points), the *Combin
 converts them to a common unit using the `normalization` block in
 [`rules/costs.json`](rules/costs.json) — edit that to reflect how scarce each resource is
 for you. There are also per-currency tabs.
+
+**Skill points** follow FC Mobile’s rules: a point’s value scales with the card’s base OVR
+(≤74 → small, 74–84 → medium, 85+ → large — see [`rules/skills.json`](rules/skills.json)),
+and the planner spends it on the stat that matters most for that player — the stats their
+**PlayStyles** boost first, then their **position’s** key stats (from the attribute map in
+[`rules/attributes.json`](rules/attributes.json)). **Training transfer** (moving training
+between players for a small fee) is documented in [`rules/costs.json`](rules/costs.json).
 
 ---
 

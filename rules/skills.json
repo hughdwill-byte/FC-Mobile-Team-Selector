@@ -1,13 +1,33 @@
 {
   "verified": false,
-  "note": "Skill points model. In-game the skill tree boosts specific attributes; the exact node-by-node effects were not verifiable from a free public source, so this uses a simplified model: one skill point spent on a main stat raises that stat by 'gain_per_point'. The upgrade planner treats 'spend 1 point on stat X for player P' as a candidate upgrade. Edit gain_per_point (or per-stat overrides) to taste.",
-  "gain_per_point": 1.0,
-  "per_stat_gain": {
-    "pace": 1.0,
-    "shooting": 1.0,
-    "passing": 1.0,
-    "dribbling": 1.0,
-    "defending": 1.0,
-    "physical": 1.0
+  "note": "Skill points in FC Mobile: you earn 1 per rank up (max 5 per player per position). A point raises position-specific SKILLS, which in turn raise the ATTRIBUTES (minor stats) that make up the six main stats. Per the public 2026 skill-point guides, the boost scales with a player's BASE OVR - so a skill point is worth much more on a high-rated card. The app models this by raising the single main stat that is most important for the player's position (and for their PlayStyles) by the OVR-scaled amount below. See rules/attributes.json for which attributes roll into each main stat and which matter per position.",
+  "max_skill_points_per_player": 5,
+  "skill_point_per_rankup": 1,
+  "ovr_scaled_gain": {
+    "note": "Main-stat gain from spending one skill point, by the player's base OVR band. 'normal' = a normal skill (up to level 3); 'advanced' = an advanced skill (unlocked after a normal skill hits level 3). The app uses 'normal' for its recommendations.",
+    "bands": [
+      { "max_ovr": 74,  "normal": 1, "advanced": 2 },
+      { "max_ovr": 84,  "normal": 3, "advanced": 6 },
+      { "max_ovr": 200, "normal": 5, "advanced": 10 }
+    ]
+  },
+  "position_priority": {
+    "note": "For each position, the main stats to invest skill points in, most important first. Derived from the key attributes for that position (see attributes.json). A player's PlayStyle-boosted stats are prioritised ABOVE this list by the planner.",
+    "GK":  ["dribbling", "pace", "defending", "shooting", "physical", "passing"],
+    "ST":  ["shooting", "pace", "dribbling", "physical", "passing", "defending"],
+    "CF":  ["shooting", "dribbling", "passing", "pace", "physical", "defending"],
+    "RW":  ["pace", "dribbling", "shooting", "passing", "physical", "defending"],
+    "LW":  ["pace", "dribbling", "shooting", "passing", "physical", "defending"],
+    "RM":  ["pace", "dribbling", "passing", "shooting", "physical", "defending"],
+    "LM":  ["pace", "dribbling", "passing", "shooting", "physical", "defending"],
+    "CAM": ["passing", "dribbling", "shooting", "pace", "physical", "defending"],
+    "CM":  ["passing", "dribbling", "physical", "defending", "pace", "shooting"],
+    "CDM": ["defending", "physical", "passing", "pace", "dribbling", "shooting"],
+    "RB":  ["pace", "defending", "passing", "physical", "dribbling", "shooting"],
+    "LB":  ["pace", "defending", "passing", "physical", "dribbling", "shooting"],
+    "RWB": ["pace", "passing", "defending", "dribbling", "physical", "shooting"],
+    "LWB": ["pace", "passing", "defending", "dribbling", "physical", "shooting"],
+    "CB":  ["defending", "physical", "pace", "passing", "dribbling", "shooting"],
+    "DEFAULT": ["pace", "dribbling", "passing", "shooting", "physical", "defending"]
   }
 }

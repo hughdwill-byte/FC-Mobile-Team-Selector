@@ -13,7 +13,13 @@ from __future__ import annotations
 from . import rules as rules_mod
 from .models import MAIN_STATS
 from .optimizer import best_squad_score
-from .scoring import PlayerState, with_rankup, with_skill_point, with_training_level
+from .scoring import (
+    PlayerState,
+    priority_stats,
+    with_rankup,
+    with_skill_point,
+    with_training_level,
+)
 
 
 def _swap(states: list[PlayerState], index: int, new_state: PlayerState) -> list[PlayerState]:
@@ -75,21 +81,14 @@ def plan_upgrades(states: list[PlayerState], limit: int = 40) -> dict:
                 f"Rank up {st.name} to rank {st.rank + 1}",
                 f"Rank {st.rank} -> {st.rank + 1}")
 
-        # Skill points (only surface the best-value stat per player to avoid noise).
+        # Skill points: invest in the player's priority stat (their PlayStyle-boosted
+        # stats first, then their position's key stats - see scoring.priority_stats).
         if st.skill_points > 0:
-            best = None
-            for stat in MAIN_STATS:
-                ns = with_skill_point(st, stat)
-                if ns is None:
-                    continue
-                sc = best_squad_score(_swap(states, idx, ns))
-                if best is None or sc > best[1]:
-                    best = (stat, sc, ns)
-            if best is not None:
-                stat, _, ns = best
-                add("skill", idx, st, ns, skill_cost,
-                    f"Spend 1 skill point on {st.name} ({stat})",
-                    f"+skill to {stat}")
+            stat = priority_stats(st)[0]
+            ns = with_skill_point(st, stat)
+            add("skill", idx, st, ns, skill_cost,
+                f"Spend 1 skill point on {st.name} ({stat})",
+                f"+skill to {stat} (priority stat for {st.positions[0] if st.positions else 'player'})")
 
     positive = [c for c in candidates if c["gain"] > 1e-9]
     positive.sort(key=lambda c: (c["gain_per_cost"], c["gain"]), reverse=True)

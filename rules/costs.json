@@ -10,8 +10,13 @@
     "per_rank": [1, 2, 4, 7, 12]
   },
   "skill": {
-    "note": "Cost per skill point spent.",
+    "note": "Cost per skill point spent. Skill points come from ranking up (1 per rank), so their real 'cost' is the rank-up you spent to get them; kept at 1 here so the planner can rank skill-point value on its own.",
     "per_point": 1
+  },
+  "training_transfer": {
+    "note": "You can move training levels from one player to another for a small fee in Training Transfer (TT) points, instead of re-grinding XP. This lets you recover most of the training invested in a player you no longer use. transfer_fee_pct is the fraction of training you LOSE in the move; tt_point_cost_per_level is the TT points charged per level moved. Placeholders - edit to match the in-game rates.",
+    "transfer_fee_pct": 0.1,
+    "tt_point_cost_per_level": 1
   },
   "normalization": {
     "note": "For the COMBINED upgrade ranking, costs from different currencies are converted into one common 'unit' by these multipliers, because 1 training-XP, 1 rank item and 1 skill point are not worth the same. These conversions are a rough guess - edit them to reflect how scarce each resource is for you. Combined cost = raw_cost * (multiplier for its type).",

@@ -38,12 +38,26 @@ def test_out_of_position_penalty_is_applied():
     assert math.isclose(s_out / s_natural, 0.82, rel_tol=1e-6)
 
 
-def test_gk_scoring_uses_ovr_and_blocks_outfielders():
-    keeper = mk(positions=["GK"], ovr=87)
+def test_gk_scoring_uses_gk_stats_and_blocks_outfielders():
+    keeper = mk(positions=["GK"], ovr=87)          # all six GK stats = 80
     striker = mk(positions=["ST"], ovr=87)
-    assert math.isclose(slot_score(keeper, "GK"), 87.0)
+    # Keeper is scored from their GK stats (~80), not from OVR.
+    assert 70 < slot_score(keeper, "GK") < 90
+    # A keeper with no GK stats entered falls back to OVR.
+    blank = mk(positions=["GK"], ovr=87, stats=0)
+    assert math.isclose(slot_score(blank, "GK"), 87.0)
     # A non-keeper in goal is effectively prohibited (tiny score).
     assert slot_score(striker, "GK") < 10
+
+
+def test_priority_stats_puts_playstyle_and_position_first():
+    from backend.scoring import priority_stats
+    # A CB with a Bruiser (physical) PlayStyle: physical should lead, defending high too.
+    cb = mk(positions=["CB"], playstyles=[{"name": "Bruiser", "plus": False}])
+    order = priority_stats(cb)
+    assert order[0] == "physical"          # PlayStyle-boosted stat first
+    assert order.index("defending") < order.index("shooting")  # position priority beats irrelevant stat
+    assert set(order) == set(["pace", "shooting", "passing", "dribbling", "defending", "physical"])
 
 
 def test_playstyle_adds_bonus():

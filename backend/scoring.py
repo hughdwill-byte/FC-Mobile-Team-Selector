@@ -85,7 +85,8 @@ def effective_stats(state: PlayerState) -> dict[str, float]:
         for stat, bonus in styles[name].items():
             if stat in out:
                 out[stat] += bonus * mult
-    return {k: max(0.0, min(120.0, v)) for k, v in out.items()}
+    # No upper cap: ranks, training and skills can legitimately push a stat past 100.
+    return {k: max(0.0, v) for k, v in out.items()}
 
 
 def _normalised_weights(position: str) -> dict[str, float]:
@@ -99,6 +100,17 @@ def _is_gk(state: PlayerState) -> bool:
     return "GK" in state.positions
 
 
+def _gk_rating(state: PlayerState) -> float:
+    """A keeper's rating from their six GK stats (Diving/Handling/Kicking/Reflexes/
+    Positioning/Physical, stored in the six stat columns). Falls back to OVR if the
+    GK stats were never filled in."""
+    if sum(state.stats.values()) < 1e-6:
+        return state.ovr
+    eff = effective_stats(state)
+    w = _normalised_weights("GK")
+    return sum(eff[s] * w[s] for s in MAIN_STATS)
+
+
 def slot_score(state: PlayerState, position: str) -> float:
     """Score of this player in this slot, on a 0-100-ish scale."""
     pos_rules = rules_mod.load("positions")
@@ -106,8 +118,8 @@ def slot_score(state: PlayerState, position: str) -> float:
     gk_penalty = pos_rules.get("gk_mismatch_penalty", 0.05)
 
     if position == "GK":
-        # Keepers are scored from OVR; a non-keeper in goal is effectively prohibited.
-        return state.ovr if _is_gk(state) else state.ovr * gk_penalty
+        # Keepers are scored from their GK stats; a non-keeper in goal is prohibited.
+        return _gk_rating(state) if _is_gk(state) else state.ovr * gk_penalty
 
     # Outfield slot.
     if _is_gk(state) and len(state.positions) == 1:
@@ -174,12 +186,51 @@ def with_rankup(state: PlayerState) -> Optional[PlayerState]:
     return ns
 
 
+def skill_point_gain(ovr: float) -> float:
+    """How much a single (normal) skill point raises a main stat, scaled by base OVR
+    per the FC Mobile skill-point rules (higher-rated cards gain more)."""
+    sk = rules_mod.load("skills")
+    bands = sk.get("ovr_scaled_gain", {}).get("bands", [{"max_ovr": 200, "normal": 1}])
+    for b in bands:
+        if ovr <= b["max_ovr"]:
+            return float(b["normal"])
+    return float(bands[-1]["normal"])
+
+
 def with_skill_point(state: PlayerState, stat: str) -> Optional[PlayerState]:
     if state.skill_points <= 0 or stat not in MAIN_STATS:
         return None
-    sk = rules_mod.load("skills")
-    gain = sk.get("per_stat_gain", {}).get(stat, sk.get("gain_per_point", 1.0))
     ns = state.copy()
-    ns.stats[stat] += gain
+    ns.stats[stat] += skill_point_gain(state.ovr)
     ns.skill_points -= 1
     return ns
+
+
+def priority_stats(state: PlayerState) -> list[str]:
+    """The order in which to invest skill points for this player: the stats their
+    PlayStyles boost come first (most-boosted first), then the position's key stats
+    (skills.json position_priority), then anything remaining."""
+    ps_rules = rules_mod.load("playstyles")
+    styles = ps_rules.get("styles", {})
+    plus_mult = ps_rules.get("plus_multiplier", 2.0)
+
+    boost = {s: 0.0 for s in MAIN_STATS}
+    for ps in state.playstyles:
+        d = styles.get(ps.get("name"))
+        if not d:
+            continue
+        mult = plus_mult if ps.get("plus") else 1.0
+        for stat, val in d.items():
+            if stat in boost and isinstance(val, (int, float)):
+                boost[stat] += val * mult
+    ps_order = [s for s, _ in sorted(boost.items(), key=lambda kv: kv[1], reverse=True) if boost[s] > 0]
+
+    pos = state.positions[0] if state.positions else "DEFAULT"
+    prio_map = rules_mod.load("skills").get("position_priority", {})
+    pos_order = prio_map.get(pos, prio_map.get("DEFAULT", MAIN_STATS))
+
+    out: list[str] = []
+    for s in [*ps_order, *pos_order, *MAIN_STATS]:
+        if s in MAIN_STATS and s not in out:
+            out.append(s)
+    return out

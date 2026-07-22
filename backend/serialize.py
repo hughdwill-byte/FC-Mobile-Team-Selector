@@ -13,6 +13,7 @@ def player_out(p: Player) -> dict:
     best_pos, best_score = best_position_score(st)
     eff = effective_stats(st)
     return {
+        "is_gk": "GK" in (p.positions or []),
         "id": p.id,
         "name": p.name,
         "ovr": p.ovr,
