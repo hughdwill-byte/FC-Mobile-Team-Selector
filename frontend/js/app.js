@@ -548,24 +548,29 @@ function openApplyModal(c) {
   else if (kind === "rankup") info = `Rank up <b>${esc(p.name)}</b>: rank <b>${p.rank} → ${a.new_rank}</b>${a.unlocked_positions && a.unlocked_positions.length ? `, unlocking <b>${a.unlocked_positions.join(", ")}</b>` : ""}.`;
   else if (kind === "skill") info = `Spend 1 skill point on <b>${esc(p.name)}</b> (you'll have ${Math.max(0, (p.skill_points || 0) - 1)} left).`;
 
-  const statInputs = stats.map((s) => `
-    <div class="field" style="margin:0"><label>${statLabel(s, isGk)} +</label>
-      <input id="ap-${s}" type="number" step="0.1" value="${deltas[s] != null ? deltas[s] : 0}" /></div>`).join("");
+  // Inputs start EMPTY; the model's estimate is shown only as a faint placeholder hint.
+  const statInputs = stats.map((s) => {
+    const est = deltas[s];
+    const ph = est ? `est +${est}` : "0";
+    return `<div class="field" style="margin:0"><label>${statLabel(s, isGk)} +</label>
+      <input id="ap-${s}" type="number" step="0.1" placeholder="${ph}" /></div>`;
+  }).join("");
 
   const ovrRow = kind === "rankup" ? `
-    <div class="field"><label>OVR increase</label><input id="ap-ovr" type="number" step="1" value="${a.ovr_delta != null ? a.ovr_delta : 0}" /></div>
+    <div class="field"><label>OVR increase</label><input id="ap-ovr" type="number" step="1" placeholder="${a.ovr_delta ? "est +" + a.ovr_delta : "0"}" /></div>
     <label style="display:block;margin-bottom:12px"><input type="checkbox" id="ap-sp" checked /> Gained 1 skill point from this rank up</label>` : "";
 
+  // Right-side drawer for this player (same style as the player editor).
   const overlay = document.createElement("div");
-  overlay.className = "modal-overlay";
-  overlay.innerHTML = `<div class="modal-card">
-    <div class="modal-head"><h2>Apply upgrade</h2><button class="btn ghost" id="ap-x">✕</button></div>
-    <div class="modal-body">
-      <div class="apply-note">${info}<br><span class="hint">Enter how much each stat actually went up in-game (pre-filled with the model's estimate). Adjust to the real numbers, then confirm.</span></div>
+  overlay.className = "drawer";
+  overlay.innerHTML = `<div class="drawer-panel">
+    <div class="drawer-head"><h2>Apply upgrade</h2><button class="btn ghost" id="ap-x">✕</button></div>
+    <div class="drawer-body">
+      <div class="apply-note">${info}<br><span class="hint">Enter how much each stat actually went up in-game. Leave a box empty for no change; the faint number is the model's estimate for reference.</span></div>
       ${ovrRow}
       <div class="field"><label>${isGk ? "GK stat" : "Stat"} increases</label><div class="statgrid">${statInputs}</div></div>
     </div>
-    <div class="modal-foot">
+    <div class="drawer-foot">
       <button class="btn primary" id="ap-confirm">Apply to player</button>
       <button class="btn ghost" id="ap-cancel">Cancel</button>
     </div>
