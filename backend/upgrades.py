@@ -71,12 +71,15 @@ def plan_training_budget(states: list[PlayerState], xp_budget: float, max_steps:
         if best is None:
             break
         _gpc, gain, cost, idx, lvl, ns, score = best
+        prev = work[idx]
+        deltas = {s: ns.stats[s] - prev.stats[s] for s in MAIN_STATS}
         work[idx] = ns
         current = score
         remaining -= cost
         raw.append({
             "player_id": ns.id, "player_name": ns.name,
             "from_level": lvl, "to_level": lvl + 1, "gain": gain, "cost": cost,
+            "stat_deltas": deltas,
         })
 
     # Why did we stop? (budget ran out vs. no more worthwhile training)
@@ -102,8 +105,12 @@ def plan_training_budget(states: list[PlayerState], xp_budget: float, max_steps:
             merged[-1]["to_level"] = s["to_level"]
             merged[-1]["gain"] += s["gain"]
             merged[-1]["cost"] += s["cost"]
+            for st in MAIN_STATS:
+                merged[-1]["stat_deltas"][st] += s["stat_deltas"][st]
         else:
-            merged.append(dict(s))
+            row = dict(s)
+            row["stat_deltas"] = dict(s["stat_deltas"])
+            merged.append(row)
 
     cum_xp = cum_gain = 0.0
     for m in merged:
@@ -115,6 +122,13 @@ def plan_training_budget(states: list[PlayerState], xp_budget: float, max_steps:
         m["cost"] = round(m["cost"])
         m["levels"] = m["to_level"] - m["from_level"]
         m["gain_per_cost"] = round((m["gain"] / m["cost"]) if m["cost"] else 0.0, 5)
+        m["stat_deltas"] = {st: round(m["stat_deltas"][st], 2) for st in MAIN_STATS}
+        # Everything the "Apply" pop-up needs for this training step.
+        m["apply"] = {
+            "kind": "training",
+            "new_training_level": m["to_level"],
+            "stat_deltas": m["stat_deltas"],
+        }
 
     return {
         "xp_budget": round(float(xp_budget)),
@@ -164,6 +178,17 @@ def plan_upgrades(states: list[PlayerState], limit: int = 40) -> dict:
             "combined_cost": round(combined_cost, 2),
             "gain_per_cost": round(gpc, 5),
             "new_squad_score": round(new_score, 3),
+            # Everything the "Apply" pop-up needs to update the player. stat_deltas are the
+            # model's PREDICTED increases (pre-filled, and editable to the real in-game values).
+            "apply": {
+                "kind": kind,
+                "new_training_level": new_state.training_level,
+                "new_rank": new_state.rank,
+                "new_skill_points": new_state.skill_points,
+                "ovr_delta": round(new_state.ovr - state.ovr, 1),
+                "stat_deltas": {s: round(new_state.stats[s] - state.stats[s], 2) for s in MAIN_STATS},
+                "unlocked_positions": [p for p in new_state.positions if p not in state.positions],
+            },
         })
 
     for idx, st in enumerate(states):

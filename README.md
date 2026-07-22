@@ -37,6 +37,14 @@ whenever your XP runs out.
 
 ![Training budget planner](docs/images/09-training-planner.png)
 
+**Apply an upgrade:** every recommendation (and every training-plan step) has an **Apply**
+button. Do the upgrade in-game, click Apply, and a pop-up asks how much each stat actually
+increased — pre-filled with the model’s estimate, so you just tweak it to the real numbers.
+Confirm and the player is updated in the app (level/rank/skill point + the stat changes),
+so your collection stays in sync and every later recommendation reflects it.
+
+![Apply an upgrade](docs/images/10-apply-modal.png)
+
 ### Players — dense, fast, keyboard-friendly
 Add or edit a player in seconds. Click any row to open the editor.
 

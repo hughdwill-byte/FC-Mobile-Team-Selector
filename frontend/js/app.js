@@ -410,6 +410,7 @@ async function renderUpgrades(app) {
   State._upkind = State._upkind || "combined";
   const kinds = { combined: d.combined, training: d.by_kind.training, rankup: d.by_kind.rankup, skill: d.by_kind.skill };
   const list = kinds[State._upkind] || [];
+  State._upRows = list;
   const warn = d.costs_unverified ? `<span class="badge warn">unverified costs</span>` : "";
 
   const rows = list.map((c, i) => `<tr>
@@ -419,6 +420,7 @@ async function renderUpgrades(app) {
     <td class="num">${c.raw_cost} <span class="hint">${esc(c.cost_currency)}</span></td>
     <td class="num rating hi">${c.gain_per_cost.toFixed(4)}</td>
     <td class="num">${c.new_squad_score.toFixed(1)}</td>
+    <td class="num"><button class="btn apply" data-up="${i}">Apply</button></td>
   </tr>`).join("");
 
   const tabBtn = (k, label) => `<button class="btn small ${State._upkind === k ? "primary" : "ghost"}" data-uk="${k}">${label}</button>`;
@@ -426,8 +428,8 @@ async function renderUpgrades(app) {
   const normalTable = `
     <div class="panel" style="padding:0;overflow-x:auto">
       <table><thead><tr><th class="num">#</th><th>Do this next</th><th class="num">Squad +</th>
-        <th class="num">Cost</th><th class="num">Gain / cost</th><th class="num">New score</th></tr></thead>
-      <tbody>${rows || `<tr><td colspan="6" class="empty-state">No improving upgrades found (everything is maxed or gives no gain).</td></tr>`}</tbody></table>
+        <th class="num">Cost</th><th class="num">Gain / cost</th><th class="num">New score</th><th></th></tr></thead>
+      <tbody>${rows || `<tr><td colspan="7" class="empty-state">No improving upgrades found (everything is maxed or gives no gain).</td></tr>`}</tbody></table>
     </div>`;
 
   const trainingPlanner = `
@@ -460,6 +462,7 @@ async function renderUpgrades(app) {
     ${content}`;
 
   $$("[data-uk]").forEach((b) => (b.onclick = () => { State._upkind = b.dataset.uk; persist(); renderUpgrades(app); }));
+  $$("[data-up]").forEach((b) => (b.onclick = () => openApplyModal(State._upRows[+b.dataset.up])));
 
   if (State._upkind === "training") {
     const go = () => {
@@ -487,6 +490,7 @@ async function loadTrainingPlan() {
       (players may be maxed, or the XP is less than the cheapest useful level).</div>`;
     return;
   }
+  State._trainRows = d.steps;
   const rows = d.steps.map((s, i) => `<tr>
     <td class="num">${i + 1}</td>
     <td><b>${esc(s.player_name)}</b> <span class="hint">${s.from_level} → ${s.to_level} (${s.levels} lvl${s.levels === 1 ? "" : "s"})</span></td>
@@ -494,6 +498,7 @@ async function loadTrainingPlan() {
     <td class="num">${s.cost.toLocaleString()} <span class="hint">XP</span></td>
     <td class="num rating hi">${s.gain_per_cost.toFixed(4)}</td>
     <td class="num">${s.cumulative_xp.toLocaleString()}</td>
+    <td class="num"><button class="btn apply" data-tr="${i}">Apply</button></td>
   </tr>`).join("");
   const reason = d.stopped_reason === "budget"
     ? "Budget spent — more worthwhile training is available if you get more XP."
@@ -516,10 +521,82 @@ async function loadTrainingPlan() {
       </div>
       <div class="col" style="flex:2 1 560px"><div class="panel" style="padding:0;overflow-x:auto">
         <table><thead><tr><th class="num">#</th><th>Train</th><th class="num">Squad +</th>
-          <th class="num">Cost</th><th class="num">Gain / XP</th><th class="num">XP so far</th></tr></thead>
+          <th class="num">Cost</th><th class="num">Gain / XP</th><th class="num">XP so far</th><th></th></tr></thead>
         <tbody>${rows}</tbody></table>
       </div></div>
     </div>`;
+
+  $$("[data-tr]", box).forEach((b) => (b.onclick = () => {
+    const s = State._trainRows[+b.dataset.tr];
+    openApplyModal({ kind: "training", player_id: s.player_id, player_name: s.player_name, apply: s.apply });
+  }));
+}
+
+// ------------------------------------------------------------------ Apply an upgrade to a player
+function openApplyModal(c) {
+  if (!c) return;
+  const p = State.players.find((x) => x.id === c.player_id);
+  if (!p) return toast("Player not found", true);
+  const a = c.apply || {};
+  const kind = c.kind;
+  const isGk = (p.positions || []).includes("GK");
+  const stats = State.meta.main_stats;
+  const deltas = a.stat_deltas || {};
+
+  let info = "";
+  if (kind === "training") info = `Set <b>${esc(p.name)}</b>'s training level to <b>${a.new_training_level}</b> (from ${p.training_level}).`;
+  else if (kind === "rankup") info = `Rank up <b>${esc(p.name)}</b>: rank <b>${p.rank} → ${a.new_rank}</b>${a.unlocked_positions && a.unlocked_positions.length ? `, unlocking <b>${a.unlocked_positions.join(", ")}</b>` : ""}.`;
+  else if (kind === "skill") info = `Spend 1 skill point on <b>${esc(p.name)}</b> (you'll have ${Math.max(0, (p.skill_points || 0) - 1)} left).`;
+
+  const statInputs = stats.map((s) => `
+    <div class="field" style="margin:0"><label>${statLabel(s, isGk)} +</label>
+      <input id="ap-${s}" type="number" step="0.1" value="${deltas[s] != null ? deltas[s] : 0}" /></div>`).join("");
+
+  const ovrRow = kind === "rankup" ? `
+    <div class="field"><label>OVR increase</label><input id="ap-ovr" type="number" step="1" value="${a.ovr_delta != null ? a.ovr_delta : 0}" /></div>
+    <label style="display:block;margin-bottom:12px"><input type="checkbox" id="ap-sp" checked /> Gained 1 skill point from this rank up</label>` : "";
+
+  const overlay = document.createElement("div");
+  overlay.className = "modal-overlay";
+  overlay.innerHTML = `<div class="modal-card">
+    <div class="modal-head"><h2>Apply upgrade</h2><button class="btn ghost" id="ap-x">✕</button></div>
+    <div class="modal-body">
+      <div class="apply-note">${info}<br><span class="hint">Enter how much each stat actually went up in-game (pre-filled with the model's estimate). Adjust to the real numbers, then confirm.</span></div>
+      ${ovrRow}
+      <div class="field"><label>${isGk ? "GK stat" : "Stat"} increases</label><div class="statgrid">${statInputs}</div></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn primary" id="ap-confirm">Apply to player</button>
+      <button class="btn ghost" id="ap-cancel">Cancel</button>
+    </div>
+  </div>`;
+  document.body.appendChild(overlay);
+  const close = () => overlay.remove();
+  const q = (sel) => overlay.querySelector(sel);
+  overlay.onclick = (e) => { if (e.target === overlay) close(); };
+  q("#ap-x").onclick = close;
+  q("#ap-cancel").onclick = close;
+  q("#ap-confirm").onclick = async () => {
+    const num = (sel) => { const v = parseFloat(q(sel).value); return isNaN(v) ? 0 : v; };
+    const upd = {};
+    stats.forEach((s) => { upd[s] = (p[s] || 0) + num("#ap-" + s); });
+    if (kind === "training") upd.training_level = a.new_training_level;
+    if (kind === "rankup") {
+      upd.rank = a.new_rank;
+      upd.ovr = Math.round((p.ovr || 0) + num("#ap-ovr"));
+      if (q("#ap-sp").checked) upd.skill_points = (p.skill_points || 0) + 1;
+      const unlocked = (a.unlocked_positions || []).filter((x) => !(p.positions || []).includes(x));
+      if (unlocked.length) upd.positions = [...(p.positions || []), ...unlocked];
+    }
+    if (kind === "skill") upd.skill_points = Math.max(0, (p.skill_points || 0) - 1);
+    try {
+      await API.updatePlayer(p.id, upd);
+      close();
+      await loadPlayers();
+      toast(`Applied to ${p.name}`);
+      render();
+    } catch (e) { toast(e.message, true); }
+  };
 }
 
 // ------------------------------------------------------------------ Gaps
