@@ -36,7 +36,7 @@ function persist() {
     localStorage.setItem(LS_KEY, JSON.stringify({
       view: State.view, selectedFormation: State.selectedFormation,
       upkind: State._upkind, rulefile: State._rulefile, search: State._search,
-      sort: State.sort, trainingXp: State._trainingXp,
+      sort: State.sort, trainingXp: State._trainingXp, squadMode: State._squadMode,
     }));
   } catch (e) { /* private mode / disabled storage: ignore */ }
 }
@@ -50,6 +50,7 @@ function restoreUi() {
     if (typeof d.search === "string") State._search = d.search;
     if (d.sort && d.sort.key) State.sort = d.sort;
     if (typeof d.trainingXp === "number") State._trainingXp = d.trainingXp;
+    if (d.squadMode) State._squadMode = d.squadMode;
   } catch (e) { /* ignore */ }
 }
 
@@ -143,7 +144,8 @@ function layout(slots) {
 }
 
 async function renderSquad(app) {
-  State.squad = await API.squad(5);
+  const potential = State._squadMode === "potential";
+  State.squad = await API.squad(5, potential);
   if (!State.squad.enough_players) return notEnough(app, State.squad.have);
   const results = State.squad.results;
   const sel = Math.min(State.selectedFormation, results.length - 1);
@@ -181,9 +183,24 @@ async function renderSquad(app) {
     </tr>`;
   }).join("");
 
+  const modeToggle = `
+    <div style="display:flex;gap:4px">
+      <button class="btn small ${!potential ? "primary" : "ghost"}" data-mode="current">Current</button>
+      <button class="btn small ${potential ? "primary" : "ghost"}" data-mode="potential">Potential (all ranked up)</button>
+    </div>`;
+  const potentialBanner = potential ? `
+    <div class="panel" style="border-color:#204034">
+      <b>Potential XI</b> — assuming every player is ranked up to the max rank (their OVR, stats and
+      unlocked positions applied). Best potential formation <b>${esc(results[0].formation)}</b> scores
+      <b class="gain-pos">${results[0].total.toFixed(1)}</b>${State.squad.current_best_total != null
+        ? ` · <b class="gain-pos">+${(results[0].total - State.squad.current_best_total).toFixed(1)}</b> over your current best (${State.squad.current_best_total.toFixed(1)})`
+        : ""}. <span class="hint">This is what to push for.</span>
+    </div>` : "";
+
   app.innerHTML = `
-    <div class="section-title"><h2>Best XI</h2>
-      <span class="hint">Best of ${State.squad.have} players across ${State.meta.formations.length} formations · Hungarian-optimal</span></div>
+    <div class="section-title"><h2>${potential ? "Potential XI" : "Best XI"}</h2>${modeToggle}</div>
+    <div class="hint" style="margin:-6px 0 12px">Best of ${State.squad.have} players across ${State.meta.formations.length} formations · Hungarian-optimal</div>
+    ${potentialBanner}
     <div class="pitch-wrap">
       <div class="pitch">
         <div class="circle"></div><div class="box top"></div><div class="box bot"></div>
@@ -198,6 +215,7 @@ async function renderSquad(app) {
       </div>
     </div>`;
 
+  $$("[data-mode]").forEach((b) => (b.onclick = () => { State._squadMode = b.dataset.mode; State.selectedFormation = 0; persist(); render(); }));
   $$(".formation-item").forEach((it) => (it.onclick = () => { State.selectedFormation = +it.dataset.idx; persist(); render(); }));
   $$("[data-pid]").forEach((el) => (el.onclick = () => { const id = +el.dataset.pid; if (id) openEditor(id); }));
 }

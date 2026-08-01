@@ -74,3 +74,13 @@ def test_fewer_than_eleven_leaves_empty_slots():
     best = optimize(players, top_n=1)[0]
     empties = [a for a in best.slots if a.player_id is None]
     assert len(empties) == 2
+
+
+def test_fully_ranked_up_never_lowers_squad_score():
+    from backend.scoring import fully_ranked_up
+    players = _squad_433()
+    for p in players:
+        p.rank = 1
+    current = optimize(players, top_n=1)[0].total
+    potential = optimize([fully_ranked_up(p) for p in players], top_n=1)[0].total
+    assert potential >= current

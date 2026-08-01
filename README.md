@@ -22,6 +22,13 @@ the way it was (including the runner-up).
 
 ![Best XI](docs/images/01-best-xi.png)
 
+Flip the **Current / Potential** toggle to see your **Potential XI** — the best team and
+formation if every player were **fully ranked up** (max rank, with their OVR, stats and
+unlocked positions applied). It shows the score gain over your current best, so you know
+what to push for.
+
+![Potential XI](docs/images/11-potential-xi.png)
+
 ### Upgrade plan — what to train / rank up next, best value first
 Every possible next upgrade (one training level, one rank up, one skill point) is
 simulated, the squad is re-optimised, and the results are ranked by **squad-score gain

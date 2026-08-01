@@ -197,6 +197,23 @@ def skill_point_gain(ovr: float) -> float:
     return float(bands[-1]["normal"])
 
 
+def fully_ranked_up(state: PlayerState) -> PlayerState:
+    """The player after every remaining rank up (to the max rank): OVR/stat gains applied
+    and all rank-up position unlocks granted. Used by the 'Potential XI' view so you can
+    see the ceiling and know what to push for."""
+    ru = rules_mod.load("rankup")
+    max_rank = ru.get("max_rank", 5)
+    s = state
+    guard = 0
+    while s.rank < max_rank and guard < 20:
+        nxt = with_rankup(s)
+        if nxt is None:
+            break
+        s = nxt
+        guard += 1
+    return s
+
+
 def with_skill_point(state: PlayerState, stat: str) -> Optional[PlayerState]:
     if state.skill_points <= 0 or stat not in MAIN_STATS:
         return None

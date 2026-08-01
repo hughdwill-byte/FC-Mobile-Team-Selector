@@ -122,12 +122,21 @@ def duplicate_player(player_id: int):
 # Optimiser outputs
 # ----------------------------------------------------------------------------
 @app.get("/api/squad")
-def squad(top: int = 5):
+def squad(top: int = 5, potential: bool = False):
     states = _states()
     if len(states) < 11:
         return {"enough_players": False, "have": len(states), "need": 11, "results": []}
+
+    out = {"enough_players": True, "have": len(states), "potential": potential}
+    if potential:
+        from .optimizer import best_squad_score
+        from .scoring import fully_ranked_up
+        out["current_best_total"] = round(best_squad_score(states), 3)
+        states = [fully_ranked_up(s) for s in states]
+
     results = optimize(states, top_n=top)
-    return {"enough_players": True, "have": len(states), "results": [formation_out(r) for r in results]}
+    out["results"] = [formation_out(r) for r in results]
+    return out
 
 
 @app.get("/api/upgrades")
