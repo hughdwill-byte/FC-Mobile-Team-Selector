@@ -6,9 +6,11 @@ import io
 
 from .models import MAIN_STATS, Player
 
+BASE_COLS = [f"base_{s}" for s in MAIN_STATS]
 CSV_COLUMNS = [
     "name", "ovr", "rank", "training_level",
     *MAIN_STATS,
+    *BASE_COLS,          # base stats at level 0 (blank = not set)
     "positions",         # pipe-separated, e.g. ST|CF
     "rankup_positions",  # pipe-separated
     "playstyles",        # pipe-separated, '+' suffix marks PlayStyle+, e.g. Rapid+|Finesse Expert
@@ -48,6 +50,7 @@ def export_csv(players: list[Player]) -> str:
             "rank": p.rank,
             "training_level": p.training_level,
             **{s: getattr(p, s) for s in MAIN_STATS},
+            **{f"base_{s}": (p.base_stats or {}).get(s, "") for s in MAIN_STATS},
             "positions": "|".join(p.positions or []),
             "rankup_positions": "|".join(p.rankup_positions or []),
             "playstyles": _fmt_playstyles(p.playstyles or []),
@@ -72,6 +75,15 @@ def parse_csv(text: str) -> list[Player]:
             except (ValueError, TypeError):
                 return default
 
+        base = {}
+        for s in MAIN_STATS:
+            v = (row.get(f"base_{s}") or "").strip()
+            if v != "":
+                try:
+                    base[s] = float(v)
+                except ValueError:
+                    pass
+
         players.append(Player(
             name=row["name"].strip(),
             ovr=num("ovr", int, 50),
@@ -83,6 +95,7 @@ def parse_csv(text: str) -> list[Player]:
             dribbling=num("dribbling", float, 50),
             defending=num("defending", float, 50),
             physical=num("physical", float, 50),
+            base_stats=base or None,
             positions=[x.strip() for x in (row.get("positions") or "").split("|") if x.strip()],
             rankup_positions=[x.strip() for x in (row.get("rankup_positions") or "").split("|") if x.strip()],
             playstyles=_parse_playstyles(row.get("playstyles", "")),

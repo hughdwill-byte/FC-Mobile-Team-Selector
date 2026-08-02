@@ -24,6 +24,7 @@ class SlotAssignment:
     player_id: Optional[int]
     player_name: str
     score: float
+    ovr: Optional[float]
     runner_up_id: Optional[int]
     runner_up_name: Optional[str]
     runner_up_score: Optional[float]
@@ -88,13 +89,13 @@ def solve_formation(
                 ru_id, ru_name, ru_score = st.id, st.name, float(col[i])
 
         if r is None:
-            assignments.append(SlotAssignment(j, pos, None, "(empty)", 0.0, ru_id, ru_name, ru_score))
+            assignments.append(SlotAssignment(j, pos, None, "(empty)", 0.0, None, ru_id, ru_name, ru_score))
         else:
             st = states[r]
             sc = float(col[r])
             total += sc
             assignments.append(
-                SlotAssignment(j, pos, st.id, st.name, sc, ru_id, ru_name, ru_score)
+                SlotAssignment(j, pos, st.id, st.name, sc, float(st.ovr), ru_id, ru_name, ru_score)
             )
 
     return FormationResult(formation=formation["name"], total=total, slots=assignments)

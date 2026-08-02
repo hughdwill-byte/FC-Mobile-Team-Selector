@@ -37,6 +37,7 @@ class PlayerState:
     playstyles: list[dict] = field(default_factory=list)
     growth: dict[str, float] = field(default_factory=dict)
     skill_points: int = 0
+    base_stats: dict[str, float] = field(default_factory=dict)
 
     def copy(self) -> "PlayerState":
         return replace(
@@ -46,6 +47,7 @@ class PlayerState:
             rankup_positions=list(self.rankup_positions),
             playstyles=[dict(p) for p in self.playstyles],
             growth=dict(self.growth),
+            base_stats=dict(self.base_stats),
         )
 
 
@@ -66,6 +68,7 @@ def player_to_state(p: Player) -> PlayerState:
         playstyles=list(p.playstyles or []),
         growth=growth,
         skill_points=int(p.skill_points or 0),
+        base_stats={s: float(v) for s, v in (p.base_stats or {}).items() if v is not None},
     )
 
 
@@ -111,20 +114,33 @@ def _gk_rating(state: PlayerState) -> float:
     return sum(eff[s] * w[s] for s in MAIN_STATS)
 
 
+def _ovr_weight() -> float:
+    """How much OVR drives the score vs the position-weighted stats. Higher = 'overall
+    first, stats second'. Editable in rules/stat_weights.json."""
+    w = rules_mod.load("stat_weights").get("ovr_weight", 0.7)
+    return min(1.0, max(0.0, float(w)))
+
+
 def slot_score(state: PlayerState, position: str) -> float:
-    """Score of this player in this slot, on a 0-100-ish scale."""
+    """Score of this player in this slot, on a 0-100-ish scale.
+
+    Scored OVERALL first, then stats: score = ovr_weight*OVR + (1-ovr_weight)*stat_rating,
+    where stat_rating is the position-weighted stats (or GK stats for keepers). An
+    out-of-position penalty multiplies the result.
+    """
     pos_rules = rules_mod.load("positions")
     oop_penalty = pos_rules.get("out_of_position_penalty", 0.82)
     gk_penalty = pos_rules.get("gk_mismatch_penalty", 0.05)
+    ow = _ovr_weight()
 
     if position == "GK":
-        # Keepers are scored from their GK stats; a non-keeper in goal is prohibited.
-        return _gk_rating(state) if _is_gk(state) else state.ovr * gk_penalty
+        if not _is_gk(state):
+            return state.ovr * gk_penalty  # a non-keeper in goal is prohibited
+        return ow * state.ovr + (1 - ow) * _gk_rating(state)
 
     # Outfield slot.
     if _is_gk(state) and len(state.positions) == 1:
-        # A pure keeper stuck outfield: prohibitive.
-        factor = gk_penalty
+        factor = gk_penalty  # a pure keeper stuck outfield: prohibitive
     elif position in state.positions:
         factor = 1.0
     else:
@@ -132,8 +148,8 @@ def slot_score(state: PlayerState, position: str) -> float:
 
     eff = effective_stats(state)
     w = _normalised_weights(position)
-    base = sum(eff[s] * w[s] for s in MAIN_STATS)
-    return base * factor
+    stat_rating = sum(eff[s] * w[s] for s in MAIN_STATS)
+    return (ow * state.ovr + (1 - ow) * stat_rating) * factor
 
 
 def best_position_score(state: PlayerState) -> tuple[str, float]:
@@ -212,6 +228,22 @@ def fully_ranked_up(state: PlayerState) -> PlayerState:
         s = nxt
         guard += 1
     return s
+
+
+def potential_state(state: PlayerState) -> PlayerState:
+    """A player's ceiling for the Potential XI: start from their BASE stats at level 0
+    (the fair comparison, if entered), train to the max level, and rank up to the max.
+    If no base stats are entered, fall back to current stats and just rank up."""
+    max_level = rules_mod.load("growth").get("max_training_level", 30)
+    ns = state.copy()
+    base = state.base_stats or {}
+    if any(base.get(s) for s in MAIN_STATS):
+        ns.stats = {s: float(base.get(s, ns.stats.get(s, 0.0))) for s in MAIN_STATS}
+        ns.training_level = 0
+        trained = with_training_level(ns, max_level)
+        if trained is not None:
+            ns = trained
+    return fully_ranked_up(ns)
 
 
 def with_skill_point(state: PlayerState, stat: str) -> Optional[PlayerState]:

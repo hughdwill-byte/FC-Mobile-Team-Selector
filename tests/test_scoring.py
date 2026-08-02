@@ -94,3 +94,17 @@ def test_skill_point_spend():
     assert up.skill_points == 0
     assert up.stats["shooting"] > p.stats["shooting"]
     assert with_skill_point(mk(skill_points=0), "shooting") is None
+
+
+def test_potential_uses_base_stats_trained_and_ranked():
+    from backend.scoring import potential_state
+    STATS = ["pace", "shooting", "passing", "dribbling", "defending", "physical"]
+    p = mk(positions=["ST"], training_level=10, rank=0, ovr=80,
+           growth={s: 1.0 for s in STATS})
+    p.base_stats = {s: 50.0 for s in STATS}
+    pot = potential_state(p)
+    assert pot.training_level == 30          # trained to max from base
+    assert pot.rank == 5                      # fully ranked up
+    # base 50 + growth 1.0*30 = 80, plus rank stat bumps (>= 80)
+    assert pot.stats["shooting"] >= 80
+    assert pot.ovr > p.ovr                    # rank ups raised OVR

@@ -23,8 +23,10 @@ the way it was (including the runner-up).
 ![Best XI](docs/images/01-best-xi.png)
 
 Flip the **Current / Potential** toggle to see your **Potential XI** — the best team and
-formation if every player were **fully ranked up** (max rank, with their OVR, stats and
-unlocked positions applied). It shows the score gain over your current best, so you know
+formation at each card’s ceiling: built from every player’s **base stats (at level 0)**,
+trained to the max level and **fully ranked up**. Because base stats are the fair way to
+compare cards (current stats just reflect how much you’ve trained), this shows which players
+are genuinely worth investing in. It reports the gain over your current best, so you know
 what to push for.
 
 ![Potential XI](docs/images/11-potential-xi.png)
@@ -119,7 +121,13 @@ Then launch. Delete the samples any time from the **Players** tab.
 ## How it works
 
 ### The score (fully swappable)
-**Squad score = the sum of the 11 per-slot scores.** A slot score is:
+**Squad score = the sum of the 11 per-slot scores.** Each slot score is **OVR first, then
+stats**: `score = ovr_weight × OVR + (1 − ovr_weight) × stat_rating` (default `ovr_weight`
+0.7, editable in [`rules/stat_weights.json`](rules/stat_weights.json)), then an
+out-of-position penalty is applied. So a player’s overall rating drives selection and their
+stats fine-tune it. Each starter’s **OVR is shown** on the pitch and in the reasoning table.
+
+The `stat_rating` part is:
 
 - **Outfield:** a position-weighted average of the six main stats — a CB’s Defending and
   Physical count for far more than their Shooting. Weights live in
@@ -200,7 +208,9 @@ app never silently invents a game formula.
 ## Getting your players in
 
 - **Manual entry:** click **+ Add player** (or press <kbd>n</kbd>). Enter OVR, the six main
-  stats as shown in-game, positions, PlayStyles, rank and training level.
+  stats as shown in-game, positions, PlayStyles, rank and training level. Optionally add
+  **base stats (at training level 0)** — the fair way to compare cards and what the
+  **Potential XI** is built from.
 - **Duplicate:** editing is faster when you start from a similar card (create, tweak, save).
 - **CSV bulk import/export:** **Data** tab. Columns:
   `name, ovr, rank, training_level, pace, shooting, passing, dribbling, defending,

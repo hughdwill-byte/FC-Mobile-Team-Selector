@@ -19,6 +19,7 @@ MAIN_STATS = ["pace", "shooting", "passing", "dribbling", "defending", "physical
 # Fields a client is allowed to set on a player (everything except the id).
 EDITABLE_FIELDS = [
     "name", "ovr", "rank", "training_level", *MAIN_STATS,
+    "base_stats",
     "positions", "rankup_positions", "playstyles",
     "growth_override", "skill_points", "notes",
 ]
@@ -45,6 +46,9 @@ class Player:
     rankup_positions: list = field(default_factory=list)
     # Up to two play styles: [{"name": "Rapid", "plus": false}, ...]
     playstyles: list = field(default_factory=list)
+    # Base stats at training level 0 (the fair way to compare cards, since current stats
+    # depend on how much a player has been trained). Optional dict {"pace": 70, ...}.
+    base_stats: Optional[dict] = None
     # Optional per-player growth override: {"pace": 0.6, ...}. None -> use rules/growth.json.
     growth_override: Optional[dict] = None
     # Unspent skill points available to allocate.

@@ -130,9 +130,9 @@ def squad(top: int = 5, potential: bool = False):
     out = {"enough_players": True, "have": len(states), "potential": potential}
     if potential:
         from .optimizer import best_squad_score
-        from .scoring import fully_ranked_up
+        from .scoring import potential_state
         out["current_best_total"] = round(best_squad_score(states), 3)
-        states = [fully_ranked_up(s) for s in states]
+        states = [potential_state(s) for s in states]
 
     results = optimize(states, top_n=top)
     out["results"] = [formation_out(r) for r in results]

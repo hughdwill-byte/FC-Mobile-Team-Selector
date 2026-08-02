@@ -21,6 +21,7 @@ def player_out(p: Player) -> dict:
         "training_level": p.training_level,
         **{s: getattr(p, s) for s in MAIN_STATS},
         "effective_stats": {k: round(v, 1) for k, v in eff.items()},
+        "base_stats": p.base_stats or None,
         "positions": p.positions or [],
         "rankup_positions": p.rankup_positions or [],
         "playstyles": p.playstyles or [],

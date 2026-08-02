@@ -2,6 +2,8 @@
   "verified": false,
   "note": "Per-position weighting of the six main stats, used by the default scoring function. These are TUNING weights (a modelling choice), not sourced game data. Order does not matter; unknown positions fall back to 'DEFAULT'. Weights are normalised to sum to 1 at load time, so they need not sum to exactly 1 here.",
   "gk_note": "GOALKEEPERS use different main stats: Diving, Handling, Kicking, Reflexes, Positioning, Physical. The app stores them in the same six columns in this order -> pace=Diving, shooting=Handling, passing=Kicking, dribbling=Reflexes, defending=Positioning, physical=Physical. The GK weights below are written against those column names but represent GK-stat importance (Reflexes/Diving/Handling/Positioning matter most, Kicking least). A GK is scored from these; if all six are blank the app falls back to OVR.",
+  "ovr_weight": 0.7,
+  "ovr_weight_note": "How much a player's OVR drives their slot score vs their position-weighted stats. score = ovr_weight*OVR + (1-ovr_weight)*stat_rating. 0.7 means 'overall first, stats second'. Raise toward 1.0 to rank almost purely by OVR; lower to let stats matter more.",
   "stats": ["pace", "shooting", "passing", "dribbling", "defending", "physical"],
   "weights": {
     "DEFAULT": { "pace": 0.2, "shooting": 0.15, "passing": 0.2, "dribbling": 0.2, "defending": 0.1, "physical": 0.15 },

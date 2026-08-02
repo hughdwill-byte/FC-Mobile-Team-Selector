@@ -11,9 +11,10 @@ import sqlite3
 from .models import MAIN_STATS, Player
 from .paths import DB_PATH, ensure_dirs
 
-JSON_FIELDS = {"positions", "rankup_positions", "playstyles", "growth_override"}
+JSON_FIELDS = {"positions", "rankup_positions", "playstyles", "growth_override", "base_stats"}
 COLUMNS = [
     "name", "ovr", "rank", "training_level", *MAIN_STATS,
+    "base_stats",
     "positions", "rankup_positions", "playstyles", "growth_override",
     "skill_points", "notes",
 ]
@@ -36,11 +37,17 @@ def init_db() -> None:
             name TEXT NOT NULL,
             ovr INTEGER, rank INTEGER, training_level INTEGER,
             pace REAL, shooting REAL, passing REAL, dribbling REAL, defending REAL, physical REAL,
+            base_stats TEXT,
             positions TEXT, rankup_positions TEXT, playstyles TEXT, growth_override TEXT,
             skill_points INTEGER, notes TEXT
         )
         """
     )
+    # Migrate older databases that predate a column (e.g. base_stats).
+    existing = {row["name"] for row in con.execute("PRAGMA table_info(players)").fetchall()}
+    for col, decl in {"base_stats": "TEXT"}.items():
+        if col not in existing:
+            con.execute(f'ALTER TABLE players ADD COLUMN "{col}" {decl}')
     con.commit()
     con.close()
 
@@ -52,7 +59,7 @@ def _row_to_player(row: sqlite3.Row) -> Player:
         if raw:
             d[f] = json.loads(raw)
         else:
-            d[f] = None if f == "growth_override" else []
+            d[f] = None if f in ("growth_override", "base_stats") else []
     return Player(**d)
 
 

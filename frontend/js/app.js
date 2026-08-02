@@ -158,7 +158,7 @@ async function renderSquad(app) {
     return `<div class="slot ${empty ? "empty" : ""}" style="left:${c.x * 100}%;top:${c.y * 100}%"
       data-pid="${s.player_id ?? ""}">
       <div class="card">
-        <div class="pos">${s.position}</div>
+        <div class="pos">${s.position}${empty ? "" : ` · OVR ${Math.round(s.ovr)}`}</div>
         <div class="nm">${esc(empty ? "—" : s.player_name)}</div>
         <div class="sc">${empty ? "" : s.score.toFixed(1)}</div>
       </div></div>`;
@@ -178,6 +178,7 @@ async function renderSquad(app) {
     return `<tr>
       <td><span class="chip pos">${s.position}</span></td>
       <td class="clickable" data-pid="${s.player_id ?? ""}">${esc(s.player_name)}</td>
+      <td class="num rating ${s.player_id == null ? "" : ratingClass(s.ovr)}">${s.player_id == null ? "—" : Math.round(s.ovr)}</td>
       <td class="num rating ${s.player_id == null ? "" : ratingClass(s.score)}">${s.player_id == null ? "—" : s.score.toFixed(1)}</td>
       <td>${ru}</td>
     </tr>`;
@@ -209,7 +210,7 @@ async function renderSquad(app) {
       <div class="col" style="flex:1 1 320px">
         <div class="panel"><h3>Top formations</h3><div class="formation-list">${formationList}</div></div>
         <div class="panel"><h3>Why — slot by slot (${esc(fr.formation)})</h3>
-          <table><thead><tr><th>Slot</th><th>Starter</th><th class="num">Score</th><th>Runner-up</th></tr></thead>
+          <table><thead><tr><th>Slot</th><th>Starter</th><th class="num">OVR</th><th class="num">Score</th><th>Runner-up</th></tr></thead>
           <tbody>${reasoning}</tbody></table>
         </div>
       </div>
@@ -278,7 +279,7 @@ function openEditor(id) {
   State.editing = p ? JSON.parse(JSON.stringify(p)) : {
     name: "", ovr: "", rank: "", training_level: "",
     pace: "", shooting: "", passing: "", dribbling: "", defending: "", physical: "",
-    positions: [], rankup_positions: [], playstyles: [], skill_points: "", notes: "",
+    positions: [], rankup_positions: [], playstyles: [], skill_points: "", notes: "", base_stats: null,
   };
   $("#drawer-title").textContent = id ? "Edit player" : "Add player";
   $("#player-delete-wrap").style.display = id ? "" : "none";
@@ -306,10 +307,18 @@ function buildEditorForm() {
       <div class="field"><label>Rank (0–5)</label><input id="f-rank" type="number" min="0" max="5" value="${val(p.rank)}" placeholder="0" /></div>
       <div class="field"><label>Training (0–30)</label><input id="f-training_level" type="number" min="0" max="30" value="${val(p.training_level)}" placeholder="0" /></div>
     </div>
-    <div class="field"><label>${isGk ? "Goalkeeper stats" : "Main stats"}</label>
+    <div class="field"><label>${isGk ? "Goalkeeper stats (current)" : "Main stats (current)"}</label>
       ${isGk ? '<div class="hint" style="margin-bottom:6px">GK selected — these six are Diving / Handling / Kicking / Reflexes / Positioning / Physical.</div>' : ""}
       <div class="statgrid">
         ${stats.map((s) => `<div class="field" style="margin:0"><label>${statLabel(s, isGk)}</label><input id="f-${s}" type="number" value="${val(p[s])}" placeholder="—" /></div>`).join("")}
+      </div>
+    </div>
+    <div class="field"><label>Base stats (at training level 0)</label>
+      <div class="hint" style="margin-bottom:6px">Optional but recommended — the fair way to compare cards, and what the <b>Potential XI</b> is built from.</div>
+      <div class="statgrid">
+        ${stats.map((s) => `<div class="field" style="margin:0"><label>${statLabel(s, isGk)}</label>
+          <input id="b-${s}" type="number" placeholder="—"
+            value="${p.base_stats && p.base_stats[s] != null ? p.base_stats[s] : ""}" /></div>`).join("")}
       </div>
     </div>
     <div class="field"><label>Positions (click to toggle)</label><div id="pos-chips">${posChips}</div></div>
@@ -361,6 +370,9 @@ function syncEditor() {
   const growth = {}; let has = false;
   State.meta.main_stats.forEach((s) => { const v = g("g-" + s).value.trim(); if (v !== "") { growth[s] = Number(v); has = true; } });
   p.growth_override = has ? growth : null;
+  const bs = {}; let hasB = false;
+  State.meta.main_stats.forEach((s) => { const v = g("b-" + s).value.trim(); if (v !== "") { bs[s] = Number(v); hasB = true; } });
+  p.base_stats = hasB ? bs : null;
 }
 
 function collectEditor() {
@@ -371,6 +383,9 @@ function collectEditor() {
   const growth = {};
   let hasGrowth = false;
   stats.forEach((s) => { const v = g("g-" + s).value.trim(); if (v !== "") { growth[s] = parseFloat(v); hasGrowth = true; } });
+  const baseStats = {};
+  let hasBase = false;
+  stats.forEach((s) => { const v = g("b-" + s).value.trim(); if (v !== "") { baseStats[s] = parseFloat(v); hasBase = true; } });
   const playstyles = [];
   ["ps0", "ps1"].forEach((k) => {
     const name = g("f-" + k).value;
@@ -384,6 +399,7 @@ function collectEditor() {
     positions: p.positions,
     rankup_positions: g("f-rankup_positions").value.split(",").map((x) => x.trim()).filter(Boolean),
     playstyles,
+    base_stats: hasBase ? baseStats : null,
     growth_override: hasGrowth ? growth : null,
     skill_points: Math.round(num("f-skill_points", 0)),
     notes: g("f-notes").value.trim(),

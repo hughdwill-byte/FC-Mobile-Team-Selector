@@ -44,11 +44,15 @@ def main() -> None:
     if replace:
         db.delete_all()
     for (name, ovr, rank, lvl, pac, sho, pas, dri, dfn, phy, pos, styles) in SAMPLE:
+        cur = {"pace": pac, "shooting": sho, "passing": pas, "dribbling": dri, "defending": dfn, "physical": phy}
+        # Rough level-0 base stats for the demo (current minus ~0.4 per trained level).
+        base = {s: round(v - 0.4 * lvl) for s, v in cur.items()}
         db.create(Player(
             name=name, ovr=ovr, rank=rank, training_level=lvl,
-            pace=pac, shooting=sho, passing=pas, dribbling=dri, defending=dfn, physical=phy,
             positions=pos,
+            base_stats=base,
             playstyles=[{"name": n, "plus": plus} for (n, plus) in styles],
+            **cur,
         ))
     print(f"Seeded {len(SAMPLE)} sample players (replace={replace}).")
 
