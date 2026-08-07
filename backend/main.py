@@ -21,6 +21,15 @@ def _startup() -> None:
     init_db()
 
 
+@app.middleware("http")
+async def _no_cache(request, call_next):
+    """This is a local app that updates in place, so never let the browser serve a stale
+    HTML/JS/CSS file - always fetch the current version."""
+    response = await call_next(request)
+    response.headers["Cache-Control"] = "no-store, max-age=0"
+    return response
+
+
 def _states():
     return [player_to_state(p) for p in db.get_all()]
 
