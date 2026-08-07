@@ -5,10 +5,10 @@ from fastapi import FastAPI, HTTPException, UploadFile
 from fastapi.responses import FileResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import analysis, csvio, db, rules as rules_mod, upgrades as upgrades_mod
+from . import analysis, csvio, db, rules as rules_mod, targets as targets_mod, upgrades as upgrades_mod
 from .db import init_db
 from .models import MAIN_STATS, player_from_dict
-from .optimizer import optimize
+from .optimizer import optimize, solve_named
 from .paths import DB_PATH, FRONTEND_DIR
 from .scoring import player_to_state
 from .serialize import formation_out, player_out
@@ -157,6 +157,27 @@ def training_plan(xp: float = 0):
     if xp <= 0:
         return {"enough_players": True, "xp_budget": 0, "steps": [], "needs_budget": True}
     plan = upgrades_mod.plan_training_budget(states, xp)
+    plan["enough_players"] = True
+    return plan
+
+
+@app.get("/api/formation-xi")
+def formation_xi(formation: str):
+    states = _states()
+    fr = solve_named(states, formation)
+    if fr is None:
+        raise HTTPException(404, f"Unknown formation: {formation}")
+    return formation_out(fr)
+
+
+@app.post("/api/takeover-plan")
+def takeover_plan(body: dict):
+    states = _states()
+    if len(states) < 11:
+        return {"enough_players": False, "have": len(states), "need": 11}
+    formation = body.get("formation")
+    targets = body.get("targets", {})
+    plan = targets_mod.takeover_plan(states, formation, targets)
     plan["enough_players"] = True
     return plan
 

@@ -37,6 +37,7 @@ function persist() {
       view: State.view, selectedFormation: State.selectedFormation,
       upkind: State._upkind, rulefile: State._rulefile, search: State._search,
       sort: State.sort, trainingXp: State._trainingXp, squadMode: State._squadMode,
+      targetFormation: State._targetFormation,
     }));
   } catch (e) { /* private mode / disabled storage: ignore */ }
 }
@@ -51,6 +52,7 @@ function restoreUi() {
     if (d.sort && d.sort.key) State.sort = d.sort;
     if (typeof d.trainingXp === "number") State._trainingXp = d.trainingXp;
     if (d.squadMode) State._squadMode = d.squadMode;
+    if (d.targetFormation) State._targetFormation = d.targetFormation;
   } catch (e) { /* ignore */ }
 }
 
@@ -96,6 +98,7 @@ async function render() {
     if (State.view === "upgrades") return renderUpgrades(app);
     if (State.view === "gaps") return renderGaps(app);
     if (State.view === "bench") return renderBench(app);
+    if (State.view === "target") return renderTarget(app);
     if (State.view === "rules") return renderRules(app);
     if (State.view === "data") return renderData(app);
   } catch (e) {
@@ -682,6 +685,121 @@ async function renderBench(app) {
   $$("tr[data-id]").forEach((tr) => (tr.onclick = () => openEditor(+tr.dataset.id)));
 }
 
+// ------------------------------------------------------------------ Target XI / takeover planner
+async function renderTarget(app) {
+  if (State.players.length < 11) return notEnough(app, State.players.length);
+  const formations = State.meta.formations;
+  if (!State._targetFormation || !formations.includes(State._targetFormation)) State._targetFormation = formations[0];
+  State._targets = State._targets || {};
+
+  let fx;
+  try { fx = await API.formationXi(State._targetFormation); }
+  catch (e) { app.innerHTML = `<div class="panel">Error: ${esc(e.message)}</div>`; return; }
+
+  const formationOpts = formations.map((f) => `<option ${f === State._targetFormation ? "selected" : ""}>${esc(f)}</option>`).join("");
+  const sortedPlayers = State.players.slice().sort((a, b) => b.ovr - a.ovr);
+  const playerOpts = (chosenId, pos) => sortedPlayers.map((p) => {
+    const elig = (p.positions || []).includes(pos);
+    return `<option value="${p.id}" ${p.id === chosenId ? "selected" : ""}>${esc(p.name)} (${p.ovr})${elig ? "" : " • OOP"}</option>`;
+  }).join("");
+
+  const rows = fx.slots.map((s) => {
+    const chosen = State._targets[s.slot_index] != null ? State._targets[s.slot_index] : s.player_id;
+    const changed = chosen !== s.player_id;
+    return `<tr>
+      <td><span class="chip pos">${s.position}</span></td>
+      <td>${esc(s.player_name)} <span class="hint">${s.player_id == null ? "" : s.score.toFixed(1)}</span></td>
+      <td><select class="tgt-sel ${changed ? "" : ""}" data-slot="${s.slot_index}" data-pos="${s.position}" data-inc="${s.player_id ?? ""}"
+        style="width:100%;background:var(--panel);border:1px solid ${changed ? "var(--accent)" : "var(--line)"};color:var(--txt);padding:6px 8px;border-radius:8px">
+        ${playerOpts(chosen, s.position)}</select></td>
+    </tr>`;
+  }).join("");
+
+  app.innerHTML = `
+    <div class="section-title"><h2>Target XI &amp; takeover planner</h2>
+      <span class="hint">Pick who you want in each slot, then see how they take over — with the incumbent's training transferred across.</span></div>
+    <div class="toolbar">
+      <label class="hint">Formation</label>
+      <select id="tgt-formation" style="background:var(--panel);border:1px solid var(--line);color:var(--txt);padding:8px 10px;border-radius:8px">${formationOpts}</select>
+      <button class="btn primary" id="tgt-plan">Plan takeovers</button>
+      <button class="btn ghost" id="tgt-reset">Reset to current best</button>
+    </div>
+    <div class="row">
+      <div class="col" style="flex:1 1 440px"><div class="panel" style="padding:0;overflow-x:auto">
+        <table><thead><tr><th>Slot</th><th>Current best</th><th>Your target</th></tr></thead><tbody>${rows}</tbody></table>
+      </div></div>
+      <div class="col" style="flex:1 1 480px" id="tgt-results"><div class="panel hint">Change one or more targets, then press <b>Plan takeovers</b>.</div></div>
+    </div>`;
+
+  $("#tgt-formation").onchange = (e) => { State._targetFormation = e.target.value; State._targets = {}; persist(); renderTarget(app); };
+  $("#tgt-reset").onclick = () => { State._targets = {}; renderTarget(app); };
+  $$(".tgt-sel").forEach((sel) => (sel.onchange = () => {
+    const slot = +sel.dataset.slot;
+    const inc = sel.dataset.inc === "" ? null : +sel.dataset.inc;
+    const val = +sel.value;
+    if (val === inc) delete State._targets[slot]; else State._targets[slot] = val;
+    sel.style.borderColor = val === inc ? "var(--line)" : "var(--accent)";
+  }));
+  $("#tgt-plan").onclick = () => loadTakeoverPlan();
+}
+
+async function loadTakeoverPlan() {
+  const box = $("#tgt-results");
+  if (!box) return;
+  const targets = State._targets || {};
+  if (!Object.keys(targets).length) {
+    box.innerHTML = `<div class="panel hint">No changes yet — pick different players in the slots on the left, then plan.</div>`;
+    return;
+  }
+  box.innerHTML = "<div class='panel hint'>Planning…</div>";
+  let d;
+  try { d = await API.takeoverPlan(State._targetFormation, targets); }
+  catch (e) { box.innerHTML = `<div class="panel">Error: ${esc(e.message)}</div>`; return; }
+  if (!d.enough_players) { box.innerHTML = `<div class="panel">Need at least 11 players.</div>`; return; }
+  const t = d.takeovers || [];
+  if (!t.length) { box.innerHTML = `<div class="panel hint">Nothing to plan — your targets already hold those slots.</div>`; return; }
+  const feePct = Math.round((d.transfer_fee_pct || 0.1) * 100);
+
+  const summary = t.map((x) => `<tr>
+    <td class="num">${x.order}</td>
+    <td><b>${esc(x.target_name)}</b> → <span class="chip pos">${esc(x.position)}</span></td>
+    <td>${esc(x.incumbent_name)} <span class="hint">${x.incumbent_score}</span></td>
+    <td>${x.achievable ? '<span class="badge ok">reachable</span>' : '<span class="badge warn">can\'t overtake</span>'}</td>
+    <td class="num">${x.total_cost_units.toLocaleString()}</td>
+  </tr>`).join("");
+
+  const rk = t.filter((x) => x.rankups.length).map((x) => `<tr>
+    <td class="num">${x.order}</td>
+    <td><b>${esc(x.target_name)}</b> → ${esc(x.position)}</td>
+    <td>rank ${x.rank_from} → ${x.final_rank} <span class="hint">(${x.rankups.length} rank-up${x.rankups.length === 1 ? "" : "s"})</span></td>
+    <td class="num">${x.rank_items} <span class="hint">items</span></td>
+  </tr>`).join("");
+
+  const tr = t.filter((x) => x.transfer_levels || x.training_added).map((x) => {
+    const parts = [];
+    if (x.transfer_levels) parts.push(`transfer ${x.transfer_levels} lvl${x.transfer_levels === 1 ? "" : "s"} from ${esc(x.incumbent_name)} (−${feePct}%)`);
+    if (x.training_added) parts.push(`+${x.training_added} to level ${x.final_level}`);
+    return `<tr>
+      <td class="num">${x.order}</td>
+      <td><b>${esc(x.target_name)}</b> → ${esc(x.position)}</td>
+      <td>${parts.join(", ")}</td>
+      <td class="num">${x.xp.toLocaleString()} <span class="hint">XP</span></td>
+    </tr>`;
+  }).join("");
+
+  box.innerHTML = `
+    <div class="panel"><h3>Takeover order ${d.costs_unverified ? '<span class="badge warn">unverified costs</span>' : ""}</h3>
+      <p class="hint">Quickest (cheapest) first. "Can't overtake" = even fully maxed the target doesn't reach the incumbent's score.</p>
+      <table><thead><tr><th class="num">#</th><th>Target</th><th>Takes over</th><th></th><th class="num">Cost</th></tr></thead><tbody>${summary}</tbody></table>
+    </div>
+    <div class="panel"><h3>Rank-ups needed</h3>
+      <table><thead><tr><th class="num">#</th><th>Player</th><th>Rank up</th><th class="num">Cost</th></tr></thead>
+      <tbody>${rk || '<tr><td colspan="4" class="hint" style="padding:10px">No rank-ups needed.</td></tr>'}</tbody></table></div>
+    <div class="panel"><h3>Training needed <span class="hint">(incumbent's level transferred, −${feePct}%)</span></h3>
+      <table><thead><tr><th class="num">#</th><th>Player</th><th>Training</th><th class="num">Cost</th></tr></thead>
+      <tbody>${tr || '<tr><td colspan="4" class="hint" style="padding:10px">No training needed.</td></tr>'}</tbody></table></div>`;
+}
+
 // ------------------------------------------------------------------ Rules
 async function renderRules(app) {
   const files = ["formations", "stat_weights", "positions", "growth", "rankup", "skills", "playstyles", "costs", "attributes"];
@@ -765,7 +883,7 @@ function wireKeys() {
     if (typing) return;
     if (e.key === "r") render();
     if (e.key === "n") openEditor(null);
-    const map = { "1": "squad", "2": "players", "3": "upgrades", "4": "gaps", "5": "bench", "6": "rules", "7": "data" };
+    const map = { "1": "squad", "2": "players", "3": "upgrades", "4": "gaps", "5": "bench", "6": "target", "7": "rules", "8": "data" };
     if (map[e.key]) setView(map[e.key]);
   });
 }

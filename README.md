@@ -55,6 +55,15 @@ changes), so your collection stays in sync and every later recommendation reflec
 
 ![Apply an upgrade](docs/images/10-apply-modal.png)
 
+### Target XI & takeover planner — pick who you want, see how they take over
+Choose a formation and the player you want in each slot. For every slot where your target
+isn't already the best, it works out the cheapest path for them to overtake the incumbent —
+**with the incumbent's training level transferred across (minus a 10% fee)** — split into a
+**Rank-ups** section and a **Training** section, ordered by who can take over most cheaply
+(soonest). It also flags targets that **can't overtake** the incumbent even fully maxed.
+
+![Target takeover planner](docs/images/12-target-takeover.png)
+
 ### Players — dense, fast, keyboard-friendly
 Add or edit a player in seconds. Click any row to open the editor.
 

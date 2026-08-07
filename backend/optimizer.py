@@ -111,6 +111,16 @@ def optimize(states: list[PlayerState], top_n: int = 5) -> list[FormationResult]
     return results[:top_n]
 
 
+def solve_named(states: list[PlayerState], formation_name: str) -> Optional[FormationResult]:
+    """Solve the best XI for one specific formation (by name)."""
+    formations = rules_mod.load("formations")["formations"]
+    f = next((x for x in formations if x["name"] == formation_name), None)
+    if f is None:
+        return None
+    table = _score_by_position(states, sorted(set(f["slots"])))
+    return solve_formation(states, f, table)
+
+
 def best_squad_score(states: list[PlayerState]) -> float:
     """Just the top squad score across all formations (used by the upgrade planner)."""
     top = optimize(states, top_n=1)
