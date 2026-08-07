@@ -60,7 +60,10 @@ Choose a formation and the player you want in each slot. For every slot where yo
 isn't already the best, it works out the cheapest path for them to overtake the incumbent —
 **with the incumbent's training level transferred across (minus a 10% fee)** — split into a
 **Rank-ups** section and a **Training** section, ordered by who can take over most cheaply
-(soonest). It also flags targets that **can't overtake** the incumbent even fully maxed.
+(soonest). It also flags targets that **can't overtake** the incumbent even fully maxed. Your current
+best and potential-best squads can use **different formations**, so the tab shows both and
+lets you build toward either; each slot's dropdown lists **in-position players first**, with
+out-of-position options grouped separately below.
 
 ![Target takeover planner](docs/images/12-target-takeover.png)
 

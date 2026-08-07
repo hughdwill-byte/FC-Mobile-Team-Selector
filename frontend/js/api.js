@@ -26,6 +26,7 @@ const API = {
   deletePlayer(id) { return this.del(`/api/players/${id}`); },
   duplicatePlayer(id) { return this.post(`/api/players/${id}/duplicate`); },
   squad(top = 5, potential = false) { return this.get(`/api/squad?top=${top}&potential=${potential ? "true" : "false"}`); },
+  bestFormations() { return this.get("/api/best-formations"); },
   formationXi(f) { return this.get(`/api/formation-xi?formation=${encodeURIComponent(f)}`); },
   takeoverPlan(formation, targets) { return this.post("/api/takeover-plan", { formation, targets }); },
   upgrades(limit = 40) { return this.get(`/api/upgrades?limit=${limit}`); },

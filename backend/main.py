@@ -170,6 +170,19 @@ def training_plan(xp: float = 0):
     return plan
 
 
+@app.get("/api/best-formations")
+def best_formations():
+    """The best formation for the current squad and for the fully-ranked-up (potential)
+    squad - these can differ, which the Target planner surfaces."""
+    states = _states()
+    if len(states) < 11:
+        return {"current": None, "potential": None}
+    from .scoring import potential_state
+    current = optimize(states, top_n=1)[0].formation
+    potential = optimize([potential_state(s) for s in states], top_n=1)[0].formation
+    return {"current": current, "potential": potential}
+
+
 @app.get("/api/formation-xi")
 def formation_xi(formation: str):
     states = _states()

@@ -689,7 +689,14 @@ async function renderBench(app) {
 async function renderTarget(app) {
   if (State.players.length < 11) return notEnough(app, State.players.length);
   const formations = State.meta.formations;
-  if (!State._targetFormation || !formations.includes(State._targetFormation)) State._targetFormation = formations[0];
+
+  // Your current best and potential best can use DIFFERENT formations; default the
+  // target to your current best and let you jump to either.
+  let bf = { current: null, potential: null };
+  try { bf = await API.bestFormations(); } catch (e) { /* fall through */ }
+  if (!State._targetFormation || !formations.includes(State._targetFormation)) {
+    State._targetFormation = bf.current && formations.includes(bf.current) ? bf.current : formations[0];
+  }
   State._targets = State._targets || {};
 
   let fx;
@@ -698,17 +705,35 @@ async function renderTarget(app) {
 
   const formationOpts = formations.map((f) => `<option ${f === State._targetFormation ? "selected" : ""}>${esc(f)}</option>`).join("");
   const sortedPlayers = State.players.slice().sort((a, b) => b.ovr - a.ovr);
-  const playerOpts = (chosenId, pos) => sortedPlayers.map((p) => {
-    const elig = (p.positions || []).includes(pos);
-    return `<option value="${p.id}" ${p.id === chosenId ? "selected" : ""}>${esc(p.name)} (${p.ovr})${elig ? "" : " • OOP"}</option>`;
-  }).join("");
+  // In-position players first (grouped and obvious); out-of-position separated below.
+  const playerOpts = (chosenId, pos) => {
+    const opt = (p) => `<option value="${p.id}" ${p.id === chosenId ? "selected" : ""}>${esc(p.name)} — ${p.ovr} OVR</option>`;
+    const eligible = sortedPlayers.filter((p) => (p.positions || []).includes(pos));
+    const others = sortedPlayers.filter((p) => !(p.positions || []).includes(pos));
+    let html = `<optgroup label="✓ In position (${pos})">${eligible.map(opt).join("") || '<option disabled>— none —</option>'}</optgroup>`;
+    if (others.length) html += `<optgroup label="· Out of position">${others.map(opt).join("")}</optgroup>`;
+    return html;
+  };
+
+  const bestLine = (bf.current || bf.potential) ? `
+    <div class="apply-note" style="margin-bottom:12px">
+      Current best formation: <b>${esc(bf.current || "—")}</b>${bf.potential && bf.potential !== bf.current
+        ? ` · Potential best (all ranked up): <b>${esc(bf.potential)}</b> <span class="hint">— these differ, so pick the one you're building toward.</span>`
+        : ` <span class="hint">— same as your potential best.</span>`}
+      <div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap">
+        ${bf.current ? `<button class="btn small ghost" data-setform="${esc(bf.current)}">Use current best (${esc(bf.current)})</button>` : ""}
+        ${bf.potential && bf.potential !== bf.current ? `<button class="btn small ghost" data-setform="${esc(bf.potential)}">Use potential best (${esc(bf.potential)})</button>` : ""}
+      </div>
+    </div>` : "";
 
   const rows = fx.slots.map((s) => {
     const chosen = State._targets[s.slot_index] != null ? State._targets[s.slot_index] : s.player_id;
     const changed = chosen !== s.player_id;
+    const incPlayer = State.players.find((p) => p.id === s.player_id);
+    const incOop = incPlayer && !(incPlayer.positions || []).includes(s.position);
     return `<tr>
       <td><span class="chip pos">${s.position}</span></td>
-      <td>${esc(s.player_name)} <span class="hint">${s.player_id == null ? "" : s.score.toFixed(1)}</span></td>
+      <td>${esc(s.player_name)} <span class="hint">${s.player_id == null ? "" : s.score.toFixed(1)}</span>${incOop ? ' <span class="badge warn">out of pos</span>' : ""}</td>
       <td><select class="tgt-sel ${changed ? "" : ""}" data-slot="${s.slot_index}" data-pos="${s.position}" data-inc="${s.player_id ?? ""}"
         style="width:100%;background:var(--panel);border:1px solid ${changed ? "var(--accent)" : "var(--line)"};color:var(--txt);padding:6px 8px;border-radius:8px">
         ${playerOpts(chosen, s.position)}</select></td>
@@ -718,6 +743,7 @@ async function renderTarget(app) {
   app.innerHTML = `
     <div class="section-title"><h2>Target XI &amp; takeover planner</h2>
       <span class="hint">Pick who you want in each slot, then see how they take over — with the incumbent's training transferred across.</span></div>
+    ${bestLine}
     <div class="toolbar">
       <label class="hint">Formation</label>
       <select id="tgt-formation" style="background:var(--panel);border:1px solid var(--line);color:var(--txt);padding:8px 10px;border-radius:8px">${formationOpts}</select>
@@ -733,6 +759,7 @@ async function renderTarget(app) {
 
   $("#tgt-formation").onchange = (e) => { State._targetFormation = e.target.value; State._targets = {}; persist(); renderTarget(app); };
   $("#tgt-reset").onclick = () => { State._targets = {}; renderTarget(app); };
+  $$("[data-setform]").forEach((b) => (b.onclick = () => { State._targetFormation = b.dataset.setform; State._targets = {}; persist(); renderTarget(app); }));
   $$(".tgt-sel").forEach((sel) => (sel.onchange = () => {
     const slot = +sel.dataset.slot;
     const inc = sel.dataset.inc === "" ? null : +sel.dataset.inc;
