@@ -1,0 +1,13 @@
+{
+  "name": "FC Mobile Squad Optimizer",
+  "short_name": "FC Squad",
+  "description": "Find your strongest starting XI and best formation in EA Sports FC Mobile, and plan where to spend upgrades.",
+  "start_url": ".",
+  "scope": ".",
+  "display": "standalone",
+  "background_color": "#0b0f14",
+  "theme_color": "#0b0f14",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}

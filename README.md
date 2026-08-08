@@ -1,15 +1,25 @@
 # ⚽ FC Mobile Squad Optimizer
 
-A **local, free, offline** desktop app that works out the strongest starting XI you can
-field in EA Sports FC Mobile from the players you own — and tells you where to spend
-your upgrade resources next.
+Works out the strongest starting XI and best formation you can field in EA Sports FC Mobile
+from the players you own — and tells you exactly where to spend your upgrades next.
 
-- Runs entirely on your machine. No account, no cloud, no paid APIs, no subscriptions.
-- One file holds all your data (`data/fcmobile.sqlite3`) — back it up by copying it.
-- **Pure Python. Node.js is _not_ required.** Launch it by double-clicking `start.bat`
-  and it opens a real dashboard in your browser.
+## ▶️ Use it now (no install)
 
-> **New here?** The easy, step-by-step install guide is **[docs/SETUP_WINDOWS.md](docs/SETUP_WINDOWS.md)**.
+**Live site:** https://hughdwill-byte.github.io/FC-Mobile-Team-Selector/
+
+The web version runs **entirely in your browser** — nothing is uploaded, your squad is saved
+privately on your device, and it works on phones and desktops. Free, no account, no server.
+Open it, hit **Data → Load sample squad** to try it, then clear it and add your own players.
+
+> Enabling the live site is a one-time repo setting — see **[docs/DEPLOY.md](docs/DEPLOY.md)**.
+
+---
+
+## Prefer a local desktop version?
+
+There's also a **pure-Python** version (identical features) you launch with `start.bat`; it
+stores data in a single `data/fcmobile.sqlite3` file. Node.js is not required. Setup guide:
+**[docs/SETUP_WINDOWS.md](docs/SETUP_WINDOWS.md)**.
 
 ---
 
