@@ -768,30 +768,42 @@ async function renderTarget(app) {
     sel.style.borderColor = val === inc ? "var(--line)" : "var(--accent)";
   }));
   $("#tgt-plan").onclick = () => loadTakeoverPlan();
+  loadTakeoverPlan();   // auto-show the transition for the current formation choice
 }
 
 async function loadTakeoverPlan() {
   const box = $("#tgt-results");
   if (!box) return;
-  const targets = State._targets || {};
-  if (!Object.keys(targets).length) {
-    box.innerHTML = `<div class="panel hint">No changes yet — pick different players in the slots on the left, then plan.</div>`;
-    return;
-  }
   box.innerHTML = "<div class='panel hint'>Planning…</div>";
   let d;
-  try { d = await API.takeoverPlan(State._targetFormation, targets); }
+  try { d = await API.takeoverPlan(State._targetFormation, State._targets || {}); }
   catch (e) { box.innerHTML = `<div class="panel">Error: ${esc(e.message)}</div>`; return; }
   if (!d.enough_players) { box.innerHTML = `<div class="panel">Need at least 11 players.</div>`; return; }
   const t = d.takeovers || [];
-  if (!t.length) { box.innerHTML = `<div class="panel hint">Nothing to plan — your targets already hold those slots.</div>`; return; }
+  const leaving = d.leaving || [];
   const feePct = Math.round((d.transfer_fee_pct || 0.1) * 100);
+
+  if (!t.length && !leaving.length) {
+    box.innerHTML = `<div class="panel hint">This target matches your current best XI (${esc(d.current_best_formation || "")}) — nothing to change. Switch formation or pick different players to plan a transition.</div>`;
+    return;
+  }
+
+  const transHint = d.current_best_formation && d.current_best_formation !== d.formation
+    ? `<p class="hint">Moving from your current best <b>${esc(d.current_best_formation)}</b> to <b>${esc(d.formation)}</b>: ${leaving.length} out, ${t.length} in, ${d.staying_count} staying.</p>`
+    : `<p class="hint">${t.length} player(s) to bring in, ${d.staying_count} staying.</p>`;
+
+  const leavingRows = leaving.map((l) => `<tr>
+    <td><b>${esc(l.name)}</b></td>
+    <td><span class="chip pos">${esc(l.current_position || "—")}</span></td>
+    <td class="num">${l.ovr}</td>
+    <td class="num">lvl ${l.training_level}</td>
+  </tr>`).join("");
 
   const summary = t.map((x) => `<tr>
     <td class="num">${x.order}</td>
     <td><b>${esc(x.target_name)}</b> → <span class="chip pos">${esc(x.position)}</span></td>
-    <td>${esc(x.incumbent_name)} <span class="hint">${x.incumbent_score}</span></td>
-    <td>${x.achievable ? '<span class="badge ok">reachable</span>' : '<span class="badge warn">can\'t overtake</span>'}</td>
+    <td>${x.incumbent_name === "(empty)" ? '<span class="hint">open slot</span>' : `vs ${esc(x.incumbent_name)} <span class="hint">${x.incumbent_score}</span>`}</td>
+    <td>${x.total_cost_units === 0 ? '<span class="badge ok">ready now</span>' : x.achievable ? '<span class="badge ok">reachable</span>' : '<span class="badge warn">can\'t reach</span>'}</td>
     <td class="num">${x.total_cost_units.toLocaleString()}</td>
   </tr>`).join("");
 
@@ -804,7 +816,7 @@ async function loadTakeoverPlan() {
 
   const tr = t.filter((x) => x.transfer_levels || x.training_added).map((x) => {
     const parts = [];
-    if (x.transfer_levels) parts.push(`transfer ${x.transfer_levels} lvl${x.transfer_levels === 1 ? "" : "s"} from ${esc(x.incumbent_name)} (−${feePct}%)`);
+    if (x.transfer_levels) parts.push(`transfer ${x.transfer_levels} lvl${x.transfer_levels === 1 ? "" : "s"}${x.transfer_from_name ? ` from ${esc(x.transfer_from_name)}` : ""} (−${feePct}%)`);
     if (x.training_added) parts.push(`+${x.training_added} to level ${x.final_level}`);
     return `<tr>
       <td class="num">${x.order}</td>
@@ -815,14 +827,19 @@ async function loadTakeoverPlan() {
   }).join("");
 
   box.innerHTML = `
-    <div class="panel"><h3>Takeover order ${d.costs_unverified ? '<span class="badge warn">unverified costs</span>' : ""}</h3>
-      <p class="hint">Quickest (cheapest) first. "Can't overtake" = even fully maxed the target doesn't reach the incumbent's score.</p>
-      <table><thead><tr><th class="num">#</th><th>Target</th><th>Takes over</th><th></th><th class="num">Cost</th></tr></thead><tbody>${summary}</tbody></table>
+    <div class="panel"><h3>Transition plan ${d.costs_unverified ? '<span class="badge warn">unverified costs</span>' : ""}</h3>
+      ${transHint}
+      <table><thead><tr><th class="num">#</th><th>Coming in</th><th>Slot / bar</th><th></th><th class="num">Cost</th></tr></thead>
+      <tbody>${summary || '<tr><td colspan="5" class="hint" style="padding:10px">No one new to bring in.</td></tr>'}</tbody></table>
     </div>
+    <div class="panel"><h3>Leaving the team</h3>
+      <p class="hint">In your current best XI but not the target (dropped by the new formation or replaced). Their training can transfer to incoming players.</p>
+      <table><thead><tr><th>Player</th><th>Was</th><th class="num">OVR</th><th class="num">Level</th></tr></thead>
+      <tbody>${leavingRows || '<tr><td colspan="4" class="hint" style="padding:10px">No one leaves.</td></tr>'}</tbody></table></div>
     <div class="panel"><h3>Rank-ups needed</h3>
       <table><thead><tr><th class="num">#</th><th>Player</th><th>Rank up</th><th class="num">Cost</th></tr></thead>
       <tbody>${rk || '<tr><td colspan="4" class="hint" style="padding:10px">No rank-ups needed.</td></tr>'}</tbody></table></div>
-    <div class="panel"><h3>Training needed <span class="hint">(incumbent's level transferred, −${feePct}%)</span></h3>
+    <div class="panel"><h3>Training needed <span class="hint">(leaving player's level transferred, −${feePct}%)</span></h3>
       <table><thead><tr><th class="num">#</th><th>Player</th><th>Training</th><th class="num">Cost</th></tr></thead>
       <tbody>${tr || '<tr><td colspan="4" class="hint" style="padding:10px">No training needed.</td></tr>'}</tbody></table></div>`;
 }

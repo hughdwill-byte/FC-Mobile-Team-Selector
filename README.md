@@ -55,15 +55,21 @@ changes), so your collection stays in sync and every later recommendation reflec
 
 ![Apply an upgrade](docs/images/10-apply-modal.png)
 
-### Target XI & takeover planner — pick who you want, see how they take over
-Choose a formation and the player you want in each slot. For every slot where your target
-isn't already the best, it works out the cheapest path for them to overtake the incumbent —
-**with the incumbent's training level transferred across (minus a 10% fee)** — split into a
-**Rank-ups** section and a **Training** section, ordered by who can take over most cheaply
-(soonest). It also flags targets that **can't overtake** the incumbent even fully maxed. Your current
-best and potential-best squads can use **different formations**, so the tab shows both and
-lets you build toward either; each slot's dropdown lists **in-position players first**, with
-out-of-position options grouped separately below.
+### Target XI & takeover planner — plan the move from your current team to your target
+Choose the formation and players you're building toward. It plans the **transition from your
+actual current best XI** (which may be a **different formation**) to that target, and shows:
+
+- **Coming in** — players who join the target XI, each with the cheapest path to get there
+  (rank-ups + training), ordered by who's quickest; players already good enough show
+  **ready now**, and ones you can't get there yet show **can't reach**.
+- **Leaving the team** — players in your current best XI but not the target, including anyone
+  **dropped by a formation change** (e.g. a winger when you move to a formation with no winger
+  slot). Their **training transfers to incoming players (minus a 10% fee)**.
+- Separate **Rank-ups** and **Training** sections with the exact steps and costs.
+
+Your current best and potential-best squads can use **different formations**, so the tab shows
+both and lets you build toward either; each slot's dropdown lists **in-position players first**,
+with out-of-position options grouped separately below.
 
 ![Target takeover planner](docs/images/12-target-takeover.png)
 
