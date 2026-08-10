@@ -71,6 +71,11 @@ const DEFAULT_RULES = {
   growth: {
     verified: false,
     default_gain_per_level: { pace:0.4, shooting:0.4, passing:0.4, dribbling:0.4, defending:0.4, physical:0.4 },
+    // Flat training boost added to every face stat at each training level (index = level 0..30).
+    // Community-compiled from FC Mobile; the boost is not linear (some levels add nothing, others add more),
+    // so a card's trained stat is base_stat + training_boost[level]. Used when base stats are known;
+    // if a player has a per-stat growth_override that takes precedence for that stat.
+    training_boost: [0,1,1,2,2,3,3,4,4,5,6,6,7,7,8,9,9,10,10,11,12,12,13,13,14,15,15,16,16,17,18],
     max_training_level: 30,
     rankup_unlocks_every_levels: 5,
   },
@@ -130,7 +135,9 @@ const DEFAULT_RULES = {
   },
   costs: {
     verified: false,
-    training: { per_level: [50,60,70,85,100,120,140,165,190,220,250,285,320,360,400,445,490,540,590,645,700,760,820,885,950,1020,1090,1165,1240,1320] },
+    // XP to advance from level L to L+1 (index 0 = level 0->1). FC Mobile training-XP curve
+    // (community-compiled); it climbs steeply so the last few levels dominate the cost.
+    training: { per_level: [100,120,150,200,270,350,440,540,660,800,950,1120,1300,1550,1900,2300,2800,3400,4100,5000,6100,7400,8900,10700,12800,15300,18300,21800,25900,30700] },
     rankup: { per_rank: [1,2,4,7,12] },
     skill: { per_point: 1 },
     training_transfer: { transfer_fee_pct: 0.1, tt_point_cost_per_level: 1 },
@@ -139,6 +146,76 @@ const DEFAULT_RULES = {
   attributes: { verified:false },
 };
 const RULE_NAMES = Object.keys(DEFAULT_RULES);
+
+// ----------------------------------------------------------------- FC Mobile reference data (community-compiled)
+// Training XP required to reach each level (from the level below it). Level 30 is the max.
+const XP_PER_LEVEL = {1:100,2:120,3:150,4:200,5:270,6:350,7:440,8:540,9:660,10:800,
+  11:950,12:1120,13:1300,14:1550,15:1900,16:2300,17:2800,18:3400,19:4100,20:5000,
+  21:6100,22:7400,23:8900,24:10700,25:12800,26:15300,27:18300,28:21800,29:25900,30:30700};
+// Cumulative XP to reach a given level from a fresh level 0 card.
+function xpToReach(level) { let t = 0; for (let l = 1; l <= level; l++) t += (XP_PER_LEVEL[l] || 0); return t; }
+// Training XP a "food" card yields when fed into another player, by the food card's base OVR.
+// A card on a green (in-form) rank yields the boosted amount instead of the base.
+const XP_YIELD_BANDS = [
+  { max_ovr:64,  base_xp:120,  green_xp:360 },
+  { max_ovr:69,  base_xp:160,  green_xp:480 },
+  { max_ovr:74,  base_xp:200,  green_xp:600 },
+  { max_ovr:79,  base_xp:250,  green_xp:750 },
+  { max_ovr:84,  base_xp:500,  green_xp:1500 },
+  { max_ovr:89,  base_xp:800,  green_xp:2400 },
+  { max_ovr:200, base_xp:1500, green_xp:4500 },
+];
+function foodXp(ovr, green) {
+  for (const b of XP_YIELD_BANDS) if (ovr <= b.max_ovr) return green ? b.green_xp : b.base_xp;
+  const b = XP_YIELD_BANDS[XP_YIELD_BANDS.length - 1]; return green ? b.green_xp : b.base_xp;
+}
+
+// Rank-up skill points apply a percentage multiplier to a card's face stats (secondary attributes),
+// +5% per point up to a +15% cap. Used to reconstruct a fully-trained card's displayed stats.
+const SKILL_POINT_PCT_PER = 0.05, SKILL_POINT_PCT_CAP = 0.15;
+function skillPointMultiplier(points) { return 1 + Math.min(SKILL_POINT_PCT_CAP, Math.max(0, points) * SKILL_POINT_PCT_PER); }
+
+// Per-position skills (community-compiled). Basic skills level 1-3 give +5%/level to their sub-attributes;
+// advanced skills (rank 4+) give a flat +10 to a wider set. Sub-attributes are grouped under the app's six
+// face stats via SUBATTR_TO_MAIN so the effect can be expressed in this model. Aliases share a position's tree.
+const SKILLS_DB = {
+  "ST": { basic: { Dexterity:["Acceleration","Sprint Speed","Agility"], Shooting:["Finishing","Shot Power","Long Shot"], Passing:["Vision","Short Passing","Long Passing"] } },
+  "RW": { basic: { Dexterity:["Acceleration","Sprint Speed","Agility"], Dribbling:["Agility","Dribbling","Ball Control"], Passing:["Crossing","Short Passing","Long Passing"] } },
+  "LW": { alias:"RW" }, "LM": { alias:"RM" },
+  "RM": { basic: { Dexterity:["Acceleration","Sprint Speed","Agility"], Dribbling:["Agility","Dribbling","Ball Control"], Passing:["Crossing","Short Passing","Long Passing"] } },
+  "CAM": { basic: { Shooting:["Finishing","Shot Power","Long Shot"], Passing:["Vision","Short Passing","Long Passing"], Dribbling:["Agility","Dribbling","Ball Control"] } },
+  "CM": { basic: { Passing:["Vision","Short Passing","Long Passing"], Dribbling:["Agility","Dribbling","Ball Control"], Defending:["Interceptions","Standing Tackle","Defensive Awareness"] } },
+  "CDM": { basic: { Defending:["Interceptions","Standing Tackle","Defensive Awareness"], Physical:["Strength","Stamina","Aggression"], Passing:["Vision","Short Passing","Long Passing"] } },
+  "CB": { basic: { Defending:["Interceptions","Standing Tackle","Sliding Tackle"], Physical:["Strength","Jumping","Aggression"], Heading:["Heading Accuracy","Jumping","Strength"] } },
+  "RB": { basic: { Pace:["Acceleration","Sprint Speed"], Defending:["Interceptions","Standing Tackle","Defensive Awareness"], Passing:["Crossing","Short Passing","Long Passing"] } },
+  "LB": { alias:"RB" }, "LWB": { alias:"RB" }, "RWB": { alias:"RB" },
+  "GK": { basic: { Reflexes:["Reflexes","Diving"], Handling:["Handling","Kicking"], Positioning:["Positioning","Speed"] } },
+};
+function skillsForPosition(pos) {
+  let node = SKILLS_DB[pos]; let guard = 0;
+  while (node && node.alias && guard++ < 4) node = SKILLS_DB[node.alias];
+  return node || null;
+}
+// Group the skills' sub-attributes under the six face stats this app models.
+const SUBATTR_TO_MAIN = {
+  "Acceleration":"pace","Sprint Speed":"pace","Speed":"pace",
+  "Finishing":"shooting","Shot Power":"shooting","Long Shot":"shooting","Volleys":"shooting","Positioning":"shooting","Curve":"shooting",
+  "Vision":"passing","Short Passing":"passing","Long Passing":"passing","Crossing":"passing",
+  "Agility":"dribbling","Dribbling":"dribbling","Ball Control":"dribbling","Balance":"dribbling","Reactions":"dribbling",
+  "Interceptions":"defending","Standing Tackle":"defending","Sliding Tackle":"defending","Defensive Awareness":"defending","Heading Accuracy":"defending",
+  "Strength":"physical","Stamina":"physical","Aggression":"physical","Jumping":"physical",
+  // GK sub-attributes reuse the six-slot GK mapping (see README): Diving=pace, Handling=shooting, Kicking=passing, Reflexes=dribbling, Positioning=defending.
+  "Diving":"pace","Handling":"shooting","Kicking":"passing","Reflexes":"dribbling",
+};
+// Which face stats a position's basic skills can raise (used to sharpen skill-point recommendations).
+function skillMainStats(pos) {
+  const node = skillsForPosition(pos); if (!node || !node.basic) return [];
+  const out = [];
+  Object.values(node.basic).forEach((subs) => subs.forEach((s) => {
+    const m = SUBATTR_TO_MAIN[s]; if (m && out.indexOf(m) < 0) out.push(m);
+  }));
+  return out;
+}
 
 // ----------------------------------------------------------------- rules store (localStorage overrides)
 const LS_RULES = "fcm.rules.overrides";
@@ -197,6 +274,7 @@ function playerToState(p) {
     training_level: Number(p.training_level) || 0, stats,
     positions: (p.positions || []).slice(), rankup_positions: (p.rankup_positions || []).slice(),
     playstyles: (p.playstyles || []).map((x) => Object.assign({}, x)), growth,
+    growth_override: p.growth_override || null,
     skill_points: Number(p.skill_points) || 0, base_stats: base,
   };
 }
@@ -204,6 +282,7 @@ function copyState(s) {
   return { id:s.id, name:s.name, ovr:s.ovr, rank:s.rank, training_level:s.training_level,
     stats:Object.assign({}, s.stats), positions:s.positions.slice(), rankup_positions:s.rankup_positions.slice(),
     playstyles:s.playstyles.map((x)=>Object.assign({},x)), growth:Object.assign({}, s.growth),
+    growth_override: s.growth_override ? Object.assign({}, s.growth_override) : null,
     skill_points:s.skill_points, base_stats:Object.assign({}, s.base_stats) };
 }
 function effectiveStats(state) {
@@ -256,12 +335,63 @@ function bestPositionScore(state) {
 
 // upgrade simulation
 function withTrainingLevel(state, delta) {
-  const maxL = loadRule("growth").max_training_level || 30;
+  const g = loadRule("growth");
+  const maxL = g.max_training_level || 30;
   const nl = state.training_level + delta;
   if (nl > maxL || delta <= 0) return null;
   const ns = copyState(state); ns.training_level = nl;
-  MAIN_STATS.forEach((s) => ns.stats[s] = ns.stats[s] + (ns.growth[s] || 0) * delta);
+  const boost = g.training_boost;
+  const ov = state.growth_override || null;
+  const boostAt = (lvl) => (Array.isArray(boost) && boost.length) ? (lvl < boost.length ? boost[lvl] : boost[boost.length - 1]) : null;
+  const flatFrom = boostAt(state.training_level), flatTo = boostAt(nl);
+  MAIN_STATS.forEach((s) => {
+    if (ov && ov[s] != null) ns.stats[s] = ns.stats[s] + Number(ov[s]) * delta;   // player-specific per-level growth
+    else if (flatTo != null) ns.stats[s] = ns.stats[s] + (flatTo - flatFrom);      // community flat training boost
+    else ns.stats[s] = ns.stats[s] + (ns.growth[s] || 0) * delta;                  // fallback linear model
+  });
   return ns;
+}
+// Advance training to the next level where stats actually change (the boost curve has "dead" levels that
+// add nothing, so a plain +1 can yield zero gain). Returns the multi-level jump, its bundled XP cost, and
+// the target level - so planners never stall on a flat step.
+function trainStep(state) {
+  const g = loadRule("growth"); const maxL = g.max_training_level || 30;
+  if (state.training_level >= maxL) return null;
+  const boost = g.training_boost, ov = state.growth_override || null;
+  const tC = loadRule("costs").training.per_level;
+  let target = state.training_level + 1;
+  if (Array.isArray(boost) && boost.length && !ov) {
+    const cur = state.training_level < boost.length ? boost[state.training_level] : boost[boost.length - 1];
+    while (target <= maxL) { const b = target < boost.length ? boost[target] : boost[boost.length - 1]; if (b > cur) break; target++; }
+    if (target > maxL) return null;
+  }
+  const ns = withTrainingLevel(state, target - state.training_level); if (!ns) return null;
+  let xp = 0; for (let l = state.training_level; l < target; l++) xp += (l < tC.length ? tC[l] : tC[tC.length - 1]);
+  return { ns, xp, levels: target - state.training_level, to_level: target };
+}
+// ----------------------------------------------------------------- Team OVR (FC Mobile roster metric)
+// Team OVR = ceil(average base OVR) + ceil(average rank). Training level and skill points are excluded;
+// only the card's base OVR and its integer rank (0-5) count. A weak bench card drags both averages down.
+function teamOvrOf(states) {
+  const n = states.length;
+  if (!n) return { team_ovr:0, base_ovr_component:0, rank_component:0, avg_base_ovr:0, avg_rank:0, size:0, next_ovr_breakpoint:0, next_rank_breakpoint:0 };
+  let so = 0, sr = 0; states.forEach((s) => { so += Number(s.ovr) || 0; sr += Number(s.rank) || 0; });
+  const oc = Math.ceil(so / n), rc = Math.ceil(sr / n);
+  const baseRem = so % n, rankRem = sr % n;
+  return { team_ovr: oc + rc, base_ovr_component: oc, rank_component: rc, avg_base_ovr: so / n, avg_rank: sr / n, size: n,
+    next_ovr_breakpoint: baseRem === 0 ? n : n - baseRem, next_rank_breakpoint: rankRem === 0 ? n : n - rankRem };
+}
+// The squad (11-18 cards) that maximises Team OVR: start with the best 11 by OVR, then keep adding the next
+// card only while it doesn't lower the metric. You never have to fill all 18 slots.
+function bestTeamOvr(states) {
+  const sorted = states.slice().sort((a, b) => (Number(b.ovr) - Number(a.ovr)) || (Number(b.rank) - Number(a.rank)));
+  if (sorted.length <= 11) { const t = teamOvrOf(sorted); t.included = sorted.map((s) => s.id); t.squad_size = sorted.length; return t; }
+  let cur = sorted.slice(0, 11), best = teamOvrOf(cur).team_ovr;
+  for (let k = 11; k < Math.min(18, sorted.length); k++) {
+    const trial = sorted.slice(0, k + 1), m = teamOvrOf(trial).team_ovr;
+    if (m >= best) { cur = trial; best = m; } else break;
+  }
+  const t = teamOvrOf(cur); t.included = cur.map((s) => s.id); t.squad_size = cur.length; return t;
 }
 function withRankup(state) {
   const ru = loadRule("rankup"); const maxR = ru.max_rank || 5;
@@ -292,10 +422,13 @@ function priorityStats(state) {
     for (const st in d) if (MAIN_STATS.includes(st) && typeof d[st] === "number") boost[st] += d[st] * m; });
   const psOrder = MAIN_STATS.filter((s) => boost[s] > 0).sort((a, b) => boost[b] - boost[a]);
   const pos = state.positions.length ? state.positions[0] : "DEFAULT";
+  // Face stats the position's actual in-game skills can raise come first (grounded in the skills database),
+  // then the tuned position priority, then everything else as a fallback.
+  const skillOrder = skillMainStats(pos);
   const pm2 = loadRule("skills").position_priority || {};
   const posOrder = pm2[pos] || pm2.DEFAULT || MAIN_STATS;
   const out = [];
-  [...psOrder, ...posOrder, ...MAIN_STATS].forEach((s) => { if (MAIN_STATS.includes(s) && out.indexOf(s) < 0) out.push(s); });
+  [...psOrder, ...skillOrder, ...posOrder, ...MAIN_STATS].forEach((s) => { if (MAIN_STATS.includes(s) && out.indexOf(s) < 0) out.push(s); });
   return out;
 }
 function fullyRankedUp(state) {
@@ -444,8 +577,8 @@ function planUpgrades(states, limit) {
         unlocked_positions: ns.positions.filter((p)=>state.positions.indexOf(p)<0) } });
   }
   states.forEach((st, idx) => {
-    if (st.training_level < maxL) { const lvl = st.training_level; const raw = lvl < tC.length ? tC[lvl] : tC[tC.length-1];
-      add("training", idx, st, withTrainingLevel(st, 1), raw, `Train ${st.name} to level ${lvl+1}`, `Training level ${lvl} -> ${lvl+1}`); }
+    if (st.training_level < maxL) { const lvl = st.training_level; const step = trainStep(st);
+      if (step) add("training", idx, st, step.ns, step.xp, `Train ${st.name} to level ${step.to_level}`, `Training level ${lvl} -> ${step.to_level}`); }
     if (st.rank < maxR) { const raw = st.rank < rC.length ? rC[st.rank] : rC[rC.length-1];
       add("rankup", idx, st, withRankup(st), raw, `Rank up ${st.name} to rank ${st.rank+1}`, `Rank ${st.rank} -> ${st.rank+1}`); }
     if (st.skill_points > 0) { const stat = priorityStats(st)[0]; const ns = withSkillPoint(st, stat);
@@ -471,23 +604,22 @@ function planTrainingBudget(states, xpBudget, maxSteps) {
     let best = null;
     for (let idx = 0; idx < work.length; idx++) {
       const st = work[idx]; const lvl = st.training_level; if (lvl >= maxL) continue;
-      const cost = lvlCost(lvl); if (cost > remaining) continue;
-      const ns = withTrainingLevel(st, 1); if (!ns) continue;
-      const score = bestSquadScore(swap(idx, ns)); const gain = score - current;
-      if (gain <= 1e-9) continue; const gpc = gain / cost;
-      if (!best || gpc > best.gpc) best = { gpc, gain, cost, idx, lvl, ns, score };
+      const ts = trainStep(st); if (!ts || ts.xp > remaining) continue;
+      const score = bestSquadScore(swap(idx, ts.ns)); const gain = score - current;
+      if (gain <= 1e-9) continue; const gpc = gain / ts.xp;
+      if (!best || gpc > best.gpc) best = { gpc, gain, cost: ts.xp, idx, lvl, ns: ts.ns, to_level: ts.to_level, score };
     }
     if (!best) break;
     const prev = work[best.idx]; const deltas = {}; MAIN_STATS.forEach((s)=>deltas[s]=best.ns.stats[s]-prev.stats[s]);
     work[best.idx] = best.ns; current = best.score; remaining -= best.cost;
-    raw.push({ player_id: best.ns.id, player_name: best.ns.name, from_level: best.lvl, to_level: best.lvl+1,
+    raw.push({ player_id: best.ns.id, player_name: best.ns.name, from_level: best.lvl, to_level: best.to_level,
       gain: best.gain, cost: best.cost, stat_deltas: deltas });
   }
   let reason = "no_more_value";
   if (raw.length < maxSteps) {
     for (let idx = 0; idx < work.length; idx++) { const st = work[idx]; if (st.training_level >= maxL) continue;
-      const ns = withTrainingLevel(st, 1); if (!ns) continue;
-      if (bestSquadScore(swap(idx, ns)) - current > 1e-9) { reason = "budget"; break; } }
+      const ts = trainStep(st); if (!ts) continue;
+      if (bestSquadScore(swap(idx, ts.ns)) - current > 1e-9) { reason = "budget"; break; } }
   } else reason = "step_cap";
   const merged = [];
   raw.forEach((s) => {
@@ -574,12 +706,12 @@ function computeTakeover(target, incumbent, position, transferSource) {
   guard = 0;
   while (slotScore(t, position) < incScore - 1e-9 && guard < 80) {
     let best = null; const cur = slotScore(t, position);
-    if (t.training_level < maxL) { const c = lvlCost(t.training_level); const nt = withTrainingLevel(t, 1);
-      if (nt) { const g = slotScore(nt, position) - cur; best = { gpc:c?g/c:0, kind:"train", ns:nt, c }; } }
+    if (t.training_level < maxL) { const ts = trainStep(t);
+      if (ts) { const g = slotScore(ts.ns, position) - cur; best = { gpc:ts.xp?g/ts.xp:0, kind:"train", ns:ts.ns, c:ts.xp, levels:ts.levels }; } }
     if (t.rank < maxR) { const c = rankCost(t.rank); const nr = withRankup(t);
-      if (nr) { const g = slotScore(nr, position) - cur; const cand = { gpc:c?g/c:0, kind:"rank", ns:nr, c }; if (!best || cand.gpc > best.gpc) best = cand; } }
+      if (nr) { const g = slotScore(nr, position) - cur; const cand = { gpc:c?g/c:0, kind:"rank", ns:nr, c, levels:0 }; if (!best || cand.gpc > best.gpc) best = cand; } }
     if (!best) break;
-    if (best.kind === "train") { trainingAdded++; xp += best.c; } else { rankItems += best.c; rankups.push(t.rank+1); }
+    if (best.kind === "train") { trainingAdded += best.levels; xp += best.c; } else { rankItems += best.c; rankups.push(t.rank+1); }
     t = best.ns; guard++;
   }
   const achievable = slotScore(t, position) >= incScore - 1e-9;
@@ -678,7 +810,15 @@ window.API = {
     const out = { enough_players:true, have:states.length, potential:!!potential };
     let use = states;
     if (potential) { out.current_best_total = r3(bestSquadScore(states)); use = states.map(potentialState); }
-    out.results = optimize(use, top || 5); return A(out); },
+    out.results = optimize(use, top || 5);
+    out.team_ovr = bestTeamOvr(states);                                    // Team OVR uses base OVR + rank (current)
+    out.team_ovr_potential = bestTeamOvr(states.map(fullyRankedUp));       // if every card were fully ranked up
+    return A(out); },
+  teamOvr() { const states = statesFromStore(); return A(bestTeamOvr(states)); },
+  xpInfo() { return A({ per_level: XP_PER_LEVEL, total_to_max: xpToReach(30),
+    cumulative: (function(){ const o={}; for (let l=1;l<=30;l++) o[l]=xpToReach(l); return o; })(),
+    yield_bands: XP_YIELD_BANDS }); },
+  foodXp(ovr, green) { return A(foodXp(Number(ovr) || 0, !!green)); },
   upgrades(limit) { const states = statesFromStore(); if (states.length < 11) return A({ enough_players:false, have:states.length, need:11 });
     const plan = planUpgrades(states, limit); plan.enough_players = true; return A(plan); },
   trainingPlan(xp) { const states = statesFromStore(); if (states.length < 11) return A({ enough_players:false, have:states.length, need:11 });
@@ -765,7 +905,8 @@ function loadSample(replace) {
   SAMPLE.forEach((r) => {
     const [name,ovr,rank,lvl,pac,sho,pas,dri,def,phy,pos,styles] = r;
     const cur = { pace:pac, shooting:sho, passing:pas, dribbling:dri, defending:def, physical:phy };
-    const base = {}; MAIN_STATS.forEach((s) => base[s] = Math.round(cur[s] - 0.4 * lvl));
+    const tb = DEFAULT_RULES.growth.training_boost; const off = lvl < tb.length ? tb[lvl] : tb[tb.length - 1];
+    const base = {}; MAIN_STATS.forEach((s) => base[s] = cur[s] - off);
     const p = newPlayer();
     Object.assign(p, { name, ovr, rank, training_level:lvl }, cur);
     p.positions = pos; p.base_stats = base;
@@ -780,5 +921,6 @@ window.API.loadSample = (replace) => A(loadSample(replace));
 window.API.clearAll = () => { savePlayers([]); return A({ ok:true }); };
 
 // expose a few internals for optional Node cross-testing
-window.__engine = { optimize, planUpgrades, planTrainingBudget, takeoverPlan, statesFromStore, bestSquadScore, potentialState };
+window.__engine = { optimize, planUpgrades, planTrainingBudget, takeoverPlan, statesFromStore, bestSquadScore, potentialState,
+  bestTeamOvr, teamOvrOf, trainStep, withTrainingLevel, xpToReach, foodXp, skillMainStats };
 })();

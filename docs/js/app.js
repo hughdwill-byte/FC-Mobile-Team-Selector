@@ -207,9 +207,25 @@ async function renderSquad(app) {
         : ""}. <span class="hint">This is what to push for.</span>
     </div>` : "";
 
+  const to = State.squad.team_ovr, top = State.squad.team_ovr_potential;
+  const teamOvrPanel = to ? `
+    <div class="panel" style="border-color:#243a52">
+      <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">
+        <div><div class="hint">Team OVR</div><div style="font-size:32px;font-weight:800;line-height:1">${to.team_ovr}</div></div>
+        <div class="hint" style="flex:1 1 240px">
+          <b>${to.base_ovr_component}</b> (avg base OVR ${to.avg_base_ovr.toFixed(1)}) + <b>${to.rank_component}</b> (avg rank ${to.avg_rank.toFixed(2)})
+          · best over a <b>${to.squad_size}-card</b> squad.
+          ${top && top.team_ovr > to.team_ovr ? `Ranking everyone up reaches <b class="gain-pos">${top.team_ovr}</b>.` : ""}
+          <br>Next +1 base-OVR breakpoint: <b>${to.next_ovr_breakpoint}</b> more base-OVR point${to.next_ovr_breakpoint===1?"":"s"} across the squad;
+          next +1 rank breakpoint: <b>${to.next_rank_breakpoint}</b> more rank${to.next_rank_breakpoint===1?"":"s"}.
+          <span class="hint">Training level and skill points don't affect Team OVR — only base OVR and rank do.</span>
+        </div>
+      </div>
+    </div>` : "";
   app.innerHTML = `
     <div class="section-title"><h2>${potential ? "Potential XI" : "Best XI"}</h2>${modeToggle}</div>
     <div class="hint" style="margin:-6px 0 12px">Best of ${State.squad.have} players across ${State.meta.formations.length} formations · Hungarian-optimal</div>
+    ${teamOvrPanel}
     ${potentialBanner}
     <div class="pitch-wrap">
       <div class="pitch">
