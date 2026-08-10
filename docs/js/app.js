@@ -310,6 +310,12 @@ function buildEditorForm() {
   const ps0 = p.playstyles[0] || {}, ps1 = p.playstyles[1] || {};
 
   $("#drawer-body").innerHTML = `
+    <div class="field card-find">
+      <label>⚡ Find your card — auto-fills stats from the database</label>
+      <input id="card-search" type="search" autocomplete="off" placeholder="Type a player name, e.g. Mbappé (accents optional)…" />
+      <div id="card-results" class="card-results"></div>
+      <div class="hint" style="margin-top:4px">Accents optional — typing "mbappe" finds "Mbappé". Or just fill the fields below manually.</div>
+    </div>
     <div class="field"><label>Name</label><input id="f-name" value="${esc(p.name)}" placeholder="Player name" /></div>
     <div class="grid3">
       <div class="field"><label>OVR</label><input id="f-ovr" type="number" value="${val(p.ovr)}" placeholder="—" /></div>
@@ -358,6 +364,43 @@ function buildEditorForm() {
     if (i >= 0) arr.splice(i, 1); else arr.push(code);
     buildEditorForm();                  // rebuild (labels may change for GK)
   }));
+
+  // Card search (auto-fill from the database).
+  const cs = $("#card-search"), cr = $("#card-results");
+  if (cs) {
+    let timer;
+    cs.oninput = () => {
+      clearTimeout(timer);
+      timer = setTimeout(async () => {
+        const q = cs.value.trim();
+        if (q.length < 2) { cr.innerHTML = ""; cr.classList.remove("open"); return; }
+        let res;
+        try { res = await API.searchCards(q); } catch (e) { return; }
+        if (!res.length) {
+          cr.innerHTML = `<div class="card-item muted">No card matches "${esc(q)}" in the database.</div>`;
+          cr.classList.add("open"); return;
+        }
+        State._cardRes = res;
+        cr.innerHTML = res.map((c, i) => `<div class="card-item" data-ci="${i}">
+          <span><b>${esc(c.n)}</b> <span class="chip pos">${esc((c.p && c.p[0]) || "")}</span></span>
+          <span class="hint">${c.o} OVR${c.gk ? " · GK" : ""}${c.v ? " · " + esc(c.v) : ""}</span>
+        </div>`).join("");
+        cr.classList.add("open");
+        $$("#card-results .card-item[data-ci]").forEach((el) => (el.onclick = () => applyCard(State._cardRes[+el.dataset.ci])));
+      }, 140);
+    };
+  }
+}
+
+function applyCard(card) {
+  const body = API.cardToPlayer(card);
+  const p = State.editing;
+  p.name = body.name;
+  p.ovr = body.ovr;
+  p.positions = (body.positions || []).slice();
+  State.meta.main_stats.forEach((s) => { p[s] = body[s]; });
+  buildEditorForm();                    // repopulate the fields with the card's values
+  toast(`Loaded ${card.n} — ${card.o} OVR`);
 }
 
 // Read the current form values back into State.editing WITHOUT coercing blanks to
@@ -916,7 +959,10 @@ function renderData(app) {
         <p class="hint">Everything is stored privately in <b>your browser on this device</b> — nothing is uploaded to any
         server. Export a JSON backup to move it to another device or keep it safe. Clearing your browser data will
         erase it, so back up first.</p></div></div>
-    </div>`;
+    </div>
+    <div class="panel"><h3>Card database</h3>
+      <p class="hint" id="carddb-note">To auto-fill a player, type their name in <b>Add player → Find your card</b>.
+      Card stats are compiled from <b>RenderZ</b> (renderz.app) — stats only, no card art.</p></div>`;
 
   const download = (name, text, type) => {
     const blob = new Blob([text], { type });
@@ -939,6 +985,7 @@ function renderData(app) {
   };
   $("#load-sample").onclick = async () => { await API.loadSample(true); await loadPlayers(); toast("Sample squad loaded"); setView("squad"); };
   $("#clear-all").onclick = async () => { if (!confirm("Delete ALL players?")) return; await API.clearAll(); await loadPlayers(); toast("All players cleared"); render(); };
+  API.cardCount().then((n) => { const el = $("#carddb-note"); if (el && n) el.insertAdjacentHTML("beforeend", ` <b>${n.toLocaleString()} cards loaded.</b>`); });
 }
 
 // ------------------------------------------------------------------ keys

@@ -15,3 +15,6 @@ env/
 # OS
 .DS_Store
 Thumbs.db
+
+# Raw card spreadsheet (has image URLs); only the image-free docs/data/cards.json is published
+*.xlsx

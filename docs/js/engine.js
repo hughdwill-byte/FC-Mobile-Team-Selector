@@ -701,6 +701,45 @@ window.API = {
   importJsonObj(obj, replace) { let list = replace?[]:loadPlayers(); (obj.players||[]).forEach((row)=>{ const p=applyData(newPlayer(), row); p.id=nextId(list); list.push(p); }); savePlayers(list); return A({ ok:true, imported:(obj.players||[]).length, replaced:!!replace }); },
 };
 
+// ----------------------------------------------------------------- card database (data/cards.json)
+// Accent folding: type the plain-English lookalike and it still matches (Mbappe -> Mbappé,
+// Ozil -> Özil, Odegaard -> Ødegaard, Piatek -> Piątek, etc.).
+const FOLD = { "ø":"o","ł":"l","đ":"d","ð":"d","þ":"th","ı":"i","ß":"ss","æ":"ae","œ":"oe","ħ":"h","ŧ":"t","ĸ":"k","ŀ":"l" };
+function fold(s) {
+  s = String(s || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+  let out = "";
+  for (const ch of s) out += (FOLD[ch] !== undefined ? FOLD[ch] : ch);
+  return out;
+}
+let _cards = null, _cardsPromise = null;
+function loadCards() {
+  if (_cards) return Promise.resolve(_cards);
+  if (_cardsPromise) return _cardsPromise;
+  _cardsPromise = fetch("data/cards.json")
+    .then((r) => (r.ok ? r.json() : { cards: [] }))
+    .then((d) => { _cards = (d.cards || []).map((c) => { c._f = fold(c.n); return c; }); _cards._meta = { count: d.count, season: d.season, updated: d.updated }; return _cards; })
+    .catch(() => { _cards = []; return _cards; });
+  return _cardsPromise;
+}
+function searchCards(query, limit) {
+  limit = limit || 40;
+  const f = fold(query).trim();
+  if (f.length < 2 || !_cards) return [];
+  const hits = [];
+  for (const c of _cards) { const i = c._f.indexOf(f); if (i >= 0) hits.push([i, c]); }
+  hits.sort((a, b) => (a[0] - b[0]) || (b[1].o - a[1].o) || a[1].n.localeCompare(b[1].n));
+  return hits.slice(0, limit).map((x) => x[1]);
+}
+// Convert a card into a player body the editor can use (stats already mapped, GK-aware).
+function cardToPlayer(card) {
+  const body = { name: card.n, ovr: card.o, positions: (card.p || []).slice() };
+  MAIN_STATS.forEach((s, i) => { body[s] = card.s[i]; });
+  return body;
+}
+window.API.searchCards = (q) => loadCards().then(() => searchCards(q, 40));
+window.API.cardCount = () => loadCards().then(() => (_cards && _cards._meta ? _cards._meta.count : (_cards ? _cards.length : 0)));
+window.API.cardToPlayer = cardToPlayer;
+
 // ----------------------------------------------------------------- sample squad (for first-time visitors)
 const SAMPLE = [
   ["Aria Fox",88,2,12,92,90,78,89,34,74,["ST","CF"],[["Rapid",true],["Clinical Finisher",false]]],

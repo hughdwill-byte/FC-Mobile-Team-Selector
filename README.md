@@ -13,6 +13,18 @@ Open it, hit **Data → Load sample squad** to try it, then clear it and add you
 
 > Enabling the live site is a one-time repo setting — see **[docs/DEPLOY.md](docs/DEPLOY.md)**.
 
+**Auto-fill from a card database:** in **Add player**, type a name under *Find your card* and pick
+the card — it fills OVR, stats and positions for you (accents optional: "mbappe" → "Mbappé";
+goalkeepers map to the GK stats automatically). The database is `docs/data/cards.json` (stats
+only, no card art). To refresh it from your own spreadsheet, run:
+
+```
+python tools/build_cards.py path/to/players.xlsx --push
+```
+
+which rebuilds the JSON and pushes it, so the live site updates in ~a minute — no manual file
+uploads.
+
 ---
 
 ## Prefer a local desktop version?

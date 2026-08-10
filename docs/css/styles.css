@@ -159,6 +159,15 @@ textarea.code { font-family: var(--mono); font-size: 12px; min-height: 340px; wh
 .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
 .toast.err { border-color: var(--danger); }
 
+/* ---------- Card search (auto-fill) ---------- */
+.card-find label { color: var(--accent); }
+.card-results { display: none; max-height: 280px; overflow-y: auto; margin-top: 6px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); }
+.card-results.open { display: block; }
+.card-item { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 9px 11px; border-bottom: 1px solid var(--line); cursor: pointer; }
+.card-item:last-child { border-bottom: none; }
+.card-item:hover { background: var(--panel2); }
+.card-item.muted { color: var(--muted); cursor: default; }
+
 /* ---------- Apply-upgrade modal ---------- */
 .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.55); z-index: 50; display: flex; align-items: center; justify-content: center; padding: 20px; }
 .modal-card { background: var(--bg2); border: 1px solid var(--line); border-radius: 12px; width: 480px; max-width: 100%; max-height: 90vh; overflow-y: auto; }
