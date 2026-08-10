@@ -314,7 +314,7 @@ function buildEditorForm() {
       <label>⚡ Find your card — auto-fills stats from the database</label>
       <input id="card-search" type="search" autocomplete="off" placeholder="Type a player name, e.g. Mbappé (accents optional)…" />
       <div id="card-results" class="card-results"></div>
-      <div class="hint" style="margin-top:4px">Accents optional — typing "mbappe" finds "Mbappé". Or just fill the fields below manually.</div>
+      <div class="hint" style="margin-top:4px">Accents optional ("mbappe" finds "Mbappé"). Fills the card's <b>base stats</b> (level 0) — then set your training level and adjust current stats for any training done.</div>
     </div>
     <div class="field"><label>Name</label><input id="f-name" value="${esc(p.name)}" placeholder="Player name" /></div>
     <div class="grid3">
@@ -398,9 +398,14 @@ function applyCard(card) {
   p.name = body.name;
   p.ovr = body.ovr;
   p.positions = (body.positions || []).slice();
-  State.meta.main_stats.forEach((s) => { p[s] = body[s]; });
+  // Card stats are the BASE stats (level 0). Fill Base stats, and use them as the
+  // starting current stats too (an untrained card's current = base) — adjust current
+  // for any training you've done.
+  const base = {};
+  State.meta.main_stats.forEach((s) => { base[s] = body[s]; p[s] = body[s]; });
+  p.base_stats = base;
   buildEditorForm();                    // repopulate the fields with the card's values
-  toast(`Loaded ${card.n} — ${card.o} OVR`);
+  toast(`Loaded ${card.n} — ${card.o} OVR (base stats)`);
 }
 
 // Read the current form values back into State.editing WITHOUT coercing blanks to
