@@ -1,0 +1,52 @@
+name: Update event card art
+
+# Refreshes docs/img/events/* (and docs/data/events.json) from the s8nag nag-screen archive
+# once a day, so new event key art flows into the player-card generator automatically.
+# Also runnable on demand from the Actions tab.
+
+on:
+  schedule:
+    - cron: "30 4 * * *"     # every day at 04:30 UTC
+  workflow_dispatch: {}
+
+permissions:
+  contents: write            # needed to commit the refreshed images back
+
+concurrency:
+  group: update-event-art
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out this repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Pillow
+        run: pip install --quiet Pillow
+
+      - name: Clone the s8nag archive (shallow)
+        run: git clone --depth 1 https://github.com/Sappurit/s8nag s8nag-src
+
+      - name: Rebuild event backgrounds
+        run: python tools/build_event_art.py s8nag-src/img
+
+      - name: Commit changes if any
+        run: |
+          rm -rf s8nag-src
+          if [ -n "$(git status --porcelain docs/img/events docs/data/events.json)" ]; then
+            git config user.name  "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add docs/img/events docs/data/events.json
+            git commit -m "Update event card art (scheduled)"
+            git push
+            echo "Pushed refreshed event art."
+          else
+            echo "No changes — event art already up to date."
+          fi
