@@ -243,18 +243,18 @@ function loadPlayers() {
 function savePlayers(list) { localStorage.setItem(LS_PLAYERS, JSON.stringify(list)); }
 function nextId(list) { return list.reduce((m, p) => Math.max(m, p.id || 0), 0) + 1; }
 
-const EDITABLE = ["name","ovr","rank","training_level", ...MAIN_STATS, "base_stats",
+const EDITABLE = ["name","ovr","rank","training_level", ...MAIN_STATS, "base_stats","base_ovr",
   "positions","rankup_positions","playstyles","growth_override","skill_points","notes","variant"];
 function coerce(k, v) {
   if (v === null || v === undefined) return null;
-  if (["ovr","rank","training_level","skill_points"].includes(k)) { const n = parseInt(v, 10); return isNaN(n) ? 0 : n; }
+  if (["ovr","rank","training_level","skill_points","base_ovr"].includes(k)) { const n = parseInt(v, 10); return isNaN(n) ? 0 : n; }
   if (MAIN_STATS.includes(k)) { const n = parseFloat(v); return isNaN(n) ? 0 : n; }
   return v;
 }
 function newPlayer() {
   return { id:null, name:"", ovr:50, rank:0, training_level:0,
     pace:50, shooting:50, passing:50, dribbling:50, defending:50, physical:50,
-    base_stats:null, positions:[], rankup_positions:[], playstyles:[],
+    base_stats:null, base_ovr:null, positions:[], rankup_positions:[], playstyles:[],
     growth_override:null, skill_points:0, notes:"", variant:"" };
 }
 function applyData(p, data) {
@@ -369,6 +369,26 @@ function trainStep(state) {
   let xp = 0; for (let l = state.training_level; l < target; l++) xp += (l < tC.length ? tC[l] : tC[tC.length - 1]);
   return { ns, xp, levels: target - state.training_level, to_level: target };
 }
+// Reconstruct a card's CURRENT displayed stats/OVR from its base (level-0, rank-0) values plus the
+// player's training level, rank and invested skill points - so users only enter those three and the
+// six current stats fill themselves in. Order: base + flat training boost + flat rank bonus, then the
+// skill-point percentage, then floor (matching the community-compiled model).
+function deriveCurrent(base, baseOvr, level, rank, skillPoints) {
+  const g = loadRule("growth"), boost = g.training_boost || [];
+  const lvl = Math.max(0, Math.min(g.max_training_level || 30, Math.round(Number(level) || 0)));
+  const tb = boost.length ? (lvl < boost.length ? boost[lvl] : boost[boost.length - 1]) : 0;
+  const ru = loadRule("rankup"); const maxR = ru.max_rank || 5;
+  const rk = Math.max(0, Math.min(maxR, Math.round(Number(rank) || 0)));
+  const rankBonus = rk * (ru.stat_gain_per_rank || 0);
+  const mult = skillPointMultiplier(Math.round(Number(skillPoints) || 0));
+  const stats = {};
+  MAIN_STATS.forEach((s) => { const b = Number((base || {})[s]); stats[s] = isNaN(b) ? null : Math.floor((b + tb + rankBonus) * mult); });
+  let ovr = Number(baseOvr);
+  if (!isNaN(ovr)) { const og = ru.ovr_gain || []; for (let r = 0; r < rk; r++) ovr += (r < og.length ? og[r] : 1); }
+  else ovr = null;
+  return { stats, ovr };
+}
+
 // ----------------------------------------------------------------- Team OVR (FC Mobile roster metric)
 // Team OVR = ceil(average base OVR) + ceil(average rank). Training level and skill points are excluded;
 // only the card's base OVR and its integer rank (0-5) count. A weak bench card drags both averages down.
@@ -540,7 +560,7 @@ function playerOut(p) {
     rank: p.rank, training_level: p.training_level };
   MAIN_STATS.forEach((s) => out[s] = p[s]);
   out.effective_stats = {}; MAIN_STATS.forEach((s) => out.effective_stats[s] = Math.round(eff[s] * 10) / 10);
-  out.base_stats = p.base_stats || null;
+  out.base_stats = p.base_stats || null; out.base_ovr = p.base_ovr != null ? p.base_ovr : null;
   out.positions = p.positions || []; out.rankup_positions = p.rankup_positions || [];
   out.playstyles = p.playstyles || []; out.growth_override = p.growth_override || null;
   out.skill_points = p.skill_points; out.notes = p.notes || ""; out.variant = p.variant || "";
@@ -922,5 +942,7 @@ window.API.clearAll = () => { savePlayers([]); return A({ ok:true }); };
 
 // expose a few internals for optional Node cross-testing
 window.__engine = { optimize, planUpgrades, planTrainingBudget, takeoverPlan, statesFromStore, bestSquadScore, potentialState,
-  bestTeamOvr, teamOvrOf, trainStep, withTrainingLevel, xpToReach, foodXp, skillMainStats };
+  bestTeamOvr, teamOvrOf, trainStep, withTrainingLevel, xpToReach, foodXp, skillMainStats, deriveCurrent };
+// Synchronous helper for the editor's live "auto-calc current stats" fields.
+window.StatCalc = { deriveCurrent };
 })();

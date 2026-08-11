@@ -184,9 +184,10 @@ async function renderSquad(app) {
   const reasoning = fr.slots.map((s) => {
     const ru = s.runner_up_name
       ? `${esc(s.runner_up_name)} <span class="hint">(${s.runner_up_score.toFixed(1)})</span>` : "—";
+    const cardBtn = s.player_id != null ? `<button class="icard" data-card="${s.player_id}" title="View / download card">🎴</button> ` : "";
     return `<tr>
       <td><span class="chip pos">${s.position}</span></td>
-      <td class="clickable" data-pid="${s.player_id ?? ""}">${esc(s.player_name)}</td>
+      <td>${cardBtn}<span class="clickable" data-pid="${s.player_id ?? ""}">${esc(s.player_name)}</span></td>
       <td class="num rating ${s.player_id == null ? "" : ratingClass(s.ovr)}">${s.player_id == null ? "—" : Math.round(s.ovr)}</td>
       <td class="num rating ${s.player_id == null ? "" : ratingClass(s.score)}">${s.player_id == null ? "—" : s.score.toFixed(1)}</td>
       <td>${ru}</td>
@@ -244,6 +245,35 @@ async function renderSquad(app) {
   $$("[data-mode]").forEach((b) => (b.onclick = () => { State._squadMode = b.dataset.mode; State.selectedFormation = 0; persist(); render(); }));
   $$(".formation-item").forEach((it) => (it.onclick = () => { State.selectedFormation = +it.dataset.idx; persist(); render(); }));
   $$("[data-pid]").forEach((el) => (el.onclick = () => { const id = +el.dataset.pid; if (id) openEditor(id); }));
+  $$(".icard[data-card]").forEach((b) => (b.onclick = (e) => {
+    e.stopPropagation();
+    const pl = State.players.find((x) => x.id === +b.dataset.card);
+    if (pl) openCardModal(pl);
+  }));
+}
+
+// ------------------------------------------------------------------ Card modal (view/download a player's card anywhere)
+function openCardModal(player) {
+  if (!window.CardArt || !player) return;
+  let ov = document.getElementById("card-modal");
+  if (!ov) { ov = document.createElement("div"); ov.id = "card-modal"; ov.className = "card-modal"; document.body.appendChild(ov); }
+  const closeOnBg = (e) => { if (e.target === ov) ov.classList.add("hidden"); };
+  ov.innerHTML = `<div class="card-modal-inner"><div class="hint" style="text-align:center">Rendering…</div></div>`;
+  ov.classList.remove("hidden"); ov.onclick = closeOnBg;
+  CardArt.renderCard(player).then((canvas) => {
+    const url = canvas.toDataURL("image/png");
+    const theme = CardArt.resolveTheme(player);
+    ov.innerHTML = `<div class="card-modal-inner">
+      <img src="${url}" class="card-modal-img" alt="${esc(player.name)} card"/>
+      <div class="hint" style="text-align:center;margin-top:8px">Theme: <b>${theme.key ? esc(theme.key) : "by OVR"}</b>${player.variant ? " · " + esc(player.variant) : ""}</div>
+      <div style="display:flex;gap:8px;justify-content:center;margin-top:10px">
+        <button class="btn small primary" id="cm-dl">⬇ Download PNG</button>
+        <button class="btn small ghost" id="cm-close">Close</button>
+      </div></div>`;
+    $("#cm-dl").onclick = () => CardArt.download(canvas, (player.name || "card").replace(/[^\w]+/g, "_"));
+    $("#cm-close").onclick = () => ov.classList.add("hidden");
+    ov.onclick = closeOnBg;
+  }).catch(() => { ov.innerHTML = `<div class="card-modal-inner"><div class="hint">Couldn't render the card.</div></div>`; });
 }
 
 // ------------------------------------------------------------------ Players
@@ -265,7 +295,7 @@ function renderPlayers(app) {
   ].map(([k, label]) => `<th class="${["ovr","pace","shooting","passing","dribbling","defending","physical","best_score","rank","training_level"].includes(k) ? "num" : ""}" data-sort="${k}">${label}${State.sort.key === k ? (dir < 0 ? " ▾" : " ▴") : ""}</th>`).join("");
 
   const body = rows.map((p) => `<tr class="clickable" data-id="${p.id}">
-    <td><b>${esc(p.name)}</b> ${(p.playstyles || []).map((s) => `<span class="chip ps">${esc(s.name)}${s.plus ? "+" : ""}</span>`).join("")}</td>
+    <td><button class="icard" data-card="${p.id}" title="View / download card">🎴</button> <b>${esc(p.name)}</b> ${(p.playstyles || []).map((s) => `<span class="chip ps">${esc(s.name)}${s.plus ? "+" : ""}</span>`).join("")}</td>
     <td class="num rating ${ratingClass(p.ovr)}">${p.ovr}</td>
     <td>${(p.positions || []).map((x) => `<span class="chip pos">${esc(x)}</span>`).join("") || "<span class='hint'>none</span>"}</td>
     <td class="num">${p.pace}</td><td class="num">${p.shooting}</td><td class="num">${p.passing}</td>
@@ -295,6 +325,11 @@ function renderPlayers(app) {
     renderPlayers(app);
   }));
   $$("tr[data-id]").forEach((tr) => (tr.onclick = () => openEditor(+tr.dataset.id)));
+  $$(".icard[data-card]").forEach((b) => (b.onclick = (e) => {
+    e.stopPropagation();
+    const pl = State.players.find((x) => x.id === +b.dataset.card);
+    if (pl) openCardModal(pl);
+  }));
 }
 
 // ------------------------------------------------------------------ Player editor drawer
@@ -318,6 +353,8 @@ function buildEditorForm() {
   const stats = State.meta.main_stats;
   const isGk = (p.positions || []).includes("GK");
   const val = (v) => (v === "" || v === null || v === undefined ? "" : v);
+  const hasBase = !!(p.base_stats && stats.some((s) => p.base_stats[s] != null));
+  const autoOn = hasBase && p._autoCurrent !== false;   // auto-fill current stats from base + training/rank/skills
   const posChips = State.meta.positions.map((code) =>
     `<span class="chip pos ${p.positions.includes(code) ? "" : "off"}" data-pos="${code}"
       style="cursor:pointer;${p.positions.includes(code) ? "" : "opacity:.35"}">${code}</span>`).join(" ");
@@ -338,23 +375,25 @@ function buildEditorForm() {
     </div>
     <div class="field"><label>Name</label><input id="f-name" value="${esc(p.name)}" placeholder="Player name" /></div>
     <div class="grid3">
-      <div class="field"><label>OVR</label><input id="f-ovr" type="number" value="${val(p.ovr)}" placeholder="—" /></div>
+      <div class="field"><label>OVR${autoOn ? " · auto" : ""}</label><input id="f-ovr" type="number" value="${val(p.ovr)}" placeholder="—" ${autoOn ? "readonly" : ""} /></div>
       <div class="field"><label>Rank (0–5)</label><input id="f-rank" type="number" min="0" max="5" value="${val(p.rank)}" placeholder="0" /></div>
       <div class="field"><label>Training (0–30)</label><input id="f-training_level" type="number" min="0" max="30" value="${val(p.training_level)}" placeholder="0" /></div>
     </div>
-    <div class="field"><label>${isGk ? "Goalkeeper stats (current)" : "Main stats (current)"}</label>
-      ${isGk ? '<div class="hint" style="margin-bottom:6px">GK selected — these six are Diving / Handling / Kicking / Reflexes / Positioning / Physical.</div>' : ""}
-      <div class="statgrid">
-        ${stats.map((s) => `<div class="field" style="margin:0"><label>${statLabel(s, isGk)}</label><input id="f-${s}" type="number" value="${val(p[s])}" placeholder="—" /></div>`).join("")}
-      </div>
-    </div>
-    <div class="field"><label>Base stats (at training level 0)</label>
-      <div class="hint" style="margin-bottom:6px">Optional but recommended — the fair way to compare cards, and what the <b>Potential XI</b> is built from.</div>
+    <div class="field"><label>Base stats (at training level 0, rank 0)</label>
+      <div class="hint" style="margin-bottom:6px">Filled from the card database. These drive the auto-calc below and the <b>Potential XI</b>.</div>
       <div class="statgrid">
         ${stats.map((s) => `<div class="field" style="margin:0"><label>${statLabel(s, isGk)}</label>
           <input id="b-${s}" type="number" placeholder="—"
             value="${p.base_stats && p.base_stats[s] != null ? p.base_stats[s] : ""}" /></div>`).join("")}
       </div>
+    </div>
+    <div class="field"><label>${isGk ? "Goalkeeper stats (current)" : "Main stats (current)"}</label>
+      ${hasBase ? `<label class="auto-toggle"><input type="checkbox" id="auto-current" ${autoOn ? "checked" : ""}/> Auto-calc from base + training / rank / skills</label>` : ""}
+      ${isGk ? '<div class="hint" style="margin-bottom:6px">GK selected — these six are Diving / Handling / Kicking / Reflexes / Positioning / Physical.</div>' : ""}
+      <div class="statgrid">
+        ${stats.map((s) => `<div class="field" style="margin:0"><label>${statLabel(s, isGk)}</label><input id="f-${s}" type="number" value="${val(p[s])}" placeholder="—" ${autoOn ? "readonly" : ""} /></div>`).join("")}
+      </div>
+      ${autoOn ? '<div class="hint" style="margin-top:6px">Filled automatically — just set OVR-source, training level, rank and skill points. Untick to edit by hand.</div>' : ""}
     </div>
     <div class="field"><label>Positions (click to toggle)</label><div id="pos-chips">${posChips}</div></div>
     <div class="field"><label>Unlocks on next rank up (optional)</label>
@@ -435,6 +474,25 @@ function buildEditorForm() {
       }
     };
   }
+
+  // Auto-calc current stats/OVR from base + training level + rank + skill points.
+  function recalcCurrent() {
+    const g = (id) => document.getElementById(id);
+    if (!g("f-pace") || !window.StatCalc) return;
+    const base = {};
+    stats.forEach((s) => { const v = g("b-" + s).value.trim(); base[s] = v === "" ? null : Number(v); });
+    const baseOvr = State.editing.base_ovr != null ? State.editing.base_ovr : null;
+    const res = StatCalc.deriveCurrent(base, baseOvr, g("f-training_level").value, g("f-rank").value, g("f-skill_points").value);
+    stats.forEach((s) => { if (res.stats[s] != null) g("f-" + s).value = res.stats[s]; });
+    if (baseOvr != null && res.ovr != null) g("f-ovr").value = res.ovr;
+  }
+  const autoBox = $("#auto-current");
+  if (autoBox) autoBox.onchange = () => { syncEditor(); State.editing._autoCurrent = autoBox.checked; buildEditorForm(); };
+  if (autoOn) {
+    recalcCurrent();
+    ["f-training_level", "f-rank", "f-skill_points", ...stats.map((s) => "b-" + s)]
+      .forEach((id) => { const el = document.getElementById(id); if (el) el.addEventListener("input", recalcCurrent); });
+  }
 }
 
 function applyCard(card) {
@@ -442,16 +500,17 @@ function applyCard(card) {
   const p = State.editing;
   p.name = body.name;
   p.ovr = body.ovr;
+  p.base_ovr = body.ovr;                 // card OVR is the level-0/rank-0 base
   p.variant = body.variant || "";       // promo/season, used to theme the player card
   p.positions = (body.positions || []).slice();
-  // Card stats are the BASE stats (level 0). Fill Base stats, and use them as the
-  // starting current stats too (an untrained card's current = base) — adjust current
-  // for any training you've done.
+  // Card stats are the BASE stats (level 0, rank 0). Fill Base stats; current stats are then
+  // auto-calculated from base + your training level / rank / skill points (see the toggle).
   const base = {};
   State.meta.main_stats.forEach((s) => { base[s] = body[s]; p[s] = body[s]; });
   p.base_stats = base;
+  p._autoCurrent = true;                 // turn on auto-calc so the user only sets training/rank/skills
   buildEditorForm();                    // repopulate the fields with the card's values
-  toast(`Loaded ${card.n} — ${card.o} OVR (base stats)`);
+  toast(`Loaded ${card.n} — ${card.o} OVR · set training / rank / skills and current stats auto-fill`);
 }
 
 // Read the current form values back into State.editing WITHOUT coercing blanks to
