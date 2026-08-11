@@ -247,3 +247,8 @@ body { padding-bottom: env(safe-area-inset-bottom); }
   .slot { width: 60px; }
   .statgrid { grid-template-columns: 1fr 1fr; }
 }
+
+/* Player-card image preview (in the editor drawer) */
+.card-preview { }
+.card-preview-img { width: 100%; max-width: 340px; display: block; margin: 10px auto 0;
+  border-radius: 14px; box-shadow: 0 8px 30px rgba(0,0,0,.45); }

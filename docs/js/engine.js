@@ -244,7 +244,7 @@ function savePlayers(list) { localStorage.setItem(LS_PLAYERS, JSON.stringify(lis
 function nextId(list) { return list.reduce((m, p) => Math.max(m, p.id || 0), 0) + 1; }
 
 const EDITABLE = ["name","ovr","rank","training_level", ...MAIN_STATS, "base_stats",
-  "positions","rankup_positions","playstyles","growth_override","skill_points","notes"];
+  "positions","rankup_positions","playstyles","growth_override","skill_points","notes","variant"];
 function coerce(k, v) {
   if (v === null || v === undefined) return null;
   if (["ovr","rank","training_level","skill_points"].includes(k)) { const n = parseInt(v, 10); return isNaN(n) ? 0 : n; }
@@ -255,7 +255,7 @@ function newPlayer() {
   return { id:null, name:"", ovr:50, rank:0, training_level:0,
     pace:50, shooting:50, passing:50, dribbling:50, defending:50, physical:50,
     base_stats:null, positions:[], rankup_positions:[], playstyles:[],
-    growth_override:null, skill_points:0, notes:"" };
+    growth_override:null, skill_points:0, notes:"", variant:"" };
 }
 function applyData(p, data) {
   EDITABLE.forEach((k) => { if (k in data && data[k] !== null && data[k] !== undefined) p[k] = coerce(k, data[k]); });
@@ -543,7 +543,7 @@ function playerOut(p) {
   out.base_stats = p.base_stats || null;
   out.positions = p.positions || []; out.rankup_positions = p.rankup_positions || [];
   out.playstyles = p.playstyles || []; out.growth_override = p.growth_override || null;
-  out.skill_points = p.skill_points; out.notes = p.notes || "";
+  out.skill_points = p.skill_points; out.notes = p.notes || ""; out.variant = p.variant || "";
   out.best_position = bp; out.best_score = Math.round(bs * 100) / 100;
   return out;
 }
@@ -872,7 +872,7 @@ function searchCards(query, limit) {
 }
 // Convert a card into a player body the editor can use (stats already mapped, GK-aware).
 function cardToPlayer(card) {
-  const body = { name: card.n, ovr: card.o, positions: (card.p || []).slice() };
+  const body = { name: card.n, ovr: card.o, positions: (card.p || []).slice(), variant: card.v || "", is_gk: !!card.gk };
   MAIN_STATS.forEach((s, i) => { body[s] = card.s[i]; });
   return body;
 }

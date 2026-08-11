@@ -332,6 +332,10 @@ function buildEditorForm() {
       <div id="card-results" class="card-results"></div>
       <div class="hint" style="margin-top:4px">Accents optional ("mbappe" finds "Mbappé"). Fills the card's <b>base stats</b> (level 0) — then set your training level and adjust current stats for any training done.</div>
     </div>
+    <div class="field">
+      <button type="button" id="card-preview-btn" class="btn small ghost" style="width:100%">🎴 Preview / download player card</button>
+      <div id="card-preview" class="card-preview"></div>
+    </div>
     <div class="field"><label>Name</label><input id="f-name" value="${esc(p.name)}" placeholder="Player name" /></div>
     <div class="grid3">
       <div class="field"><label>OVR</label><input id="f-ovr" type="number" value="${val(p.ovr)}" placeholder="—" /></div>
@@ -406,6 +410,31 @@ function buildEditorForm() {
       }, 140);
     };
   }
+
+  // Player-card image: preview + download, themed by the card's promo/season.
+  const cpb = $("#card-preview-btn"), cpv = $("#card-preview");
+  if (cpb && window.CardArt) {
+    cpb.onclick = async () => {
+      syncEditor();                       // use whatever's typed right now
+      const p = State.editing;
+      if (!(p.name || "").trim()) return toast("Add a name first", true);
+      cpv.innerHTML = `<div class="hint" style="margin-top:8px">Rendering…</div>`;
+      try {
+        const canvas = await CardArt.renderCard(p);
+        const url = canvas.toDataURL("image/png");
+        const theme = CardArt.resolveTheme(p);
+        cpv.innerHTML = `
+          <img src="${url}" alt="Player card" class="card-preview-img" />
+          <div style="display:flex;gap:8px;margin-top:8px;align-items:center;flex-wrap:wrap">
+            <button type="button" id="card-dl" class="btn small primary">⬇ Download PNG</button>
+            <span class="hint">Theme: <b>${theme.key ? esc(theme.key) : "by OVR (no promo match)"}</b>${p.variant ? " · " + esc(p.variant) : ""}</span>
+          </div>`;
+        $("#card-dl").onclick = () => CardArt.download(canvas, (p.name || "card").replace(/[^\w]+/g, "_"));
+      } catch (e) {
+        cpv.innerHTML = `<div class="hint" style="margin-top:8px">Couldn't render the card.</div>`;
+      }
+    };
+  }
 }
 
 function applyCard(card) {
@@ -413,6 +442,7 @@ function applyCard(card) {
   const p = State.editing;
   p.name = body.name;
   p.ovr = body.ovr;
+  p.variant = body.variant || "";       // promo/season, used to theme the player card
   p.positions = (body.positions || []).slice();
   // Card stats are the BASE stats (level 0). Fill Base stats, and use them as the
   // starting current stats too (an untrained card's current = base) — adjust current
@@ -476,6 +506,7 @@ function collectEditor() {
     growth_override: hasGrowth ? growth : null,
     skill_points: Math.round(num("f-skill_points", 0)),
     notes: g("f-notes").value.trim(),
+    variant: p.variant || "",           // promo/season carried from the card database
   };
 }
 
