@@ -393,7 +393,7 @@ function buildEditorForm() {
       <div class="statgrid">
         ${stats.map((s) => `<div class="field" style="margin:0"><label>${statLabel(s, isGk)}</label><input id="f-${s}" type="number" value="${val(p[s])}" placeholder="—" ${autoOn ? "readonly" : ""} /></div>`).join("")}
       </div>
-      ${autoOn ? '<div class="hint" style="margin-top:6px">Filled automatically — just set OVR-source, training level, rank and skill points. Untick to edit by hand.</div>' : ""}
+      ${autoOn ? '<div class="hint" style="margin-top:6px">Auto-filled from <b>base + training</b> (rank raises OVR). <b>Skills aren\'t included</b> — they add extra to certain stats on maxed cards and vary per card, so bump those to match the game. Untick to edit everything by hand.</div>' : ""}
     </div>
     <div class="field"><label>Positions (click to toggle)</label><div id="pos-chips">${posChips}</div></div>
     <div class="field"><label>Unlocks on next rank up (optional)</label>
@@ -482,7 +482,10 @@ function buildEditorForm() {
     const base = {};
     stats.forEach((s) => { const v = g("b-" + s).value.trim(); base[s] = v === "" ? null : Number(v); });
     const baseOvr = State.editing.base_ovr != null ? State.editing.base_ovr : null;
-    const res = StatCalc.deriveCurrent(base, baseOvr, g("f-training_level").value, g("f-rank").value, g("f-skill_points").value);
+    // Current = base + training (uniform), and rank raises OVR. Skills are NOT auto-applied: each card's
+    // skill boosts vary per card and aren't recoverable from base stats, so the user tunes skill-affected
+    // stats by hand (skillLevel passed as 0 here).
+    const res = StatCalc.deriveCurrent(base, baseOvr, g("f-training_level").value, g("f-rank").value, State.editing.positions, 0);
     stats.forEach((s) => { if (res.stats[s] != null) g("f-" + s).value = res.stats[s]; });
     if (baseOvr != null && res.ovr != null) g("f-ovr").value = res.ovr;
   }

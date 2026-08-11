@@ -244,10 +244,10 @@ function savePlayers(list) { localStorage.setItem(LS_PLAYERS, JSON.stringify(lis
 function nextId(list) { return list.reduce((m, p) => Math.max(m, p.id || 0), 0) + 1; }
 
 const EDITABLE = ["name","ovr","rank","training_level", ...MAIN_STATS, "base_stats","base_ovr",
-  "positions","rankup_positions","playstyles","growth_override","skill_points","notes","variant"];
+  "positions","rankup_positions","playstyles","growth_override","skill_points","skill_level","notes","variant"];
 function coerce(k, v) {
   if (v === null || v === undefined) return null;
-  if (["ovr","rank","training_level","skill_points","base_ovr"].includes(k)) { const n = parseInt(v, 10); return isNaN(n) ? 0 : n; }
+  if (["ovr","rank","training_level","skill_points","base_ovr","skill_level"].includes(k)) { const n = parseInt(v, 10); return isNaN(n) ? 0 : n; }
   if (MAIN_STATS.includes(k)) { const n = parseFloat(v); return isNaN(n) ? 0 : n; }
   return v;
 }
@@ -255,7 +255,7 @@ function newPlayer() {
   return { id:null, name:"", ovr:50, rank:0, training_level:0,
     pace:50, shooting:50, passing:50, dribbling:50, defending:50, physical:50,
     base_stats:null, base_ovr:null, positions:[], rankup_positions:[], playstyles:[],
-    growth_override:null, skill_points:0, notes:"", variant:"" };
+    growth_override:null, skill_points:0, skill_level:0, notes:"", variant:"" };
 }
 function applyData(p, data) {
   EDITABLE.forEach((k) => { if (k in data && data[k] !== null && data[k] !== undefined) p[k] = coerce(k, data[k]); });
@@ -373,20 +373,32 @@ function trainStep(state) {
 // player's training level, rank and invested skill points - so users only enter those three and the
 // six current stats fill themselves in. Order: base + flat training boost + flat rank bonus, then the
 // skill-point percentage, then floor (matching the community-compiled model).
-function deriveCurrent(base, baseOvr, level, rank, skillPoints) {
+// Differential skill boost (%) per headline stat for a position's basic skills at a given level (0-3).
+// Each basic skill (+5%/level) targets three sub-attributes; those roll up into the headline stats via
+// SUBATTR_TO_MAIN, so different stats get boosted by different amounts (a defender's DEF/PHY climb, a
+// striker's SHO/PAC climb). This is why growth is NOT uniform across the six stats.
+function skillBoostPct(positions, level) {
+  const pct = {}; MAIN_STATS.forEach((s) => pct[s] = 0);
+  level = Math.max(0, Math.min(3, Math.round(Number(level) || 0)));
+  if (!level) return pct;
+  const node = skillsForPosition((positions && positions[0]) || "DEFAULT");
+  if (node && node.basic) Object.values(node.basic).forEach((subs) =>
+    subs.forEach((sub) => { const h = SUBATTR_TO_MAIN[sub]; if (h) pct[h] += (0.05 * level) / 3; }));
+  return pct;
+}
+function deriveCurrent(base, baseOvr, level, rank, positions, skillLevel) {
   const g = loadRule("growth"), boost = g.training_boost || [];
   const lvl = Math.max(0, Math.min(g.max_training_level || 30, Math.round(Number(level) || 0)));
   const tb = boost.length ? (lvl < boost.length ? boost[lvl] : boost[boost.length - 1]) : 0;
   const ru = loadRule("rankup"); const maxR = ru.max_rank || 5;
   const rk = Math.max(0, Math.min(maxR, Math.round(Number(rank) || 0)));
-  const rankBonus = rk * (ru.stat_gain_per_rank || 0);
-  const mult = skillPointMultiplier(Math.round(Number(skillPoints) || 0));
+  const pct = skillBoostPct(positions, skillLevel);          // skills add a differential % per stat
   const stats = {};
-  MAIN_STATS.forEach((s) => { const b = Number((base || {})[s]); stats[s] = isNaN(b) ? null : Math.floor((b + tb + rankBonus) * mult); });
-  let ovr = Number(baseOvr);
+  MAIN_STATS.forEach((s) => { const b = Number((base || {})[s]); stats[s] = isNaN(b) ? null : Math.floor((b + tb) * (1 + pct[s])); });
+  let ovr = Number(baseOvr);                                  // rank raises OVR only (not flat stats)
   if (!isNaN(ovr)) { const og = ru.ovr_gain || []; for (let r = 0; r < rk; r++) ovr += (r < og.length ? og[r] : 1); }
   else ovr = null;
-  return { stats, ovr };
+  return { stats, ovr, skill_pct: pct };
 }
 
 // ----------------------------------------------------------------- Team OVR (FC Mobile roster metric)
