@@ -440,10 +440,20 @@ function buildEditorForm() {
           cr.classList.add("open"); return;
         }
         State._cardRes = res;
-        cr.innerHTML = res.map((c, i) => `<div class="card-item" data-ci="${i}">
-          <span><b>${esc(c.n)}</b> <span class="chip pos">${esc((c.p && c.p[0]) || "")}</span></span>
-          <span class="hint">${c.o} OVR${c.gk ? " · GK" : ""}${c.v ? " · " + esc(c.v) : ""}</span>
-        </div>`).join("");
+        cr.innerHTML = res.map((c, i) => {
+          // Themed thumbnail (promo art + OVR) so cards are visually distinguishable at a glance.
+          const t = window.CardArt ? CardArt.resolveTheme({ variant: c.v, ovr: c.o, positions: c.p }) : { img: null, accent: "#f5c542" };
+          const bg = t.img ? `background-image:url('${t.img}')` : `background:linear-gradient(155deg, ${t.accent}44, #0b0f14)`;
+          return `<div class="card-item" data-ci="${i}">
+            <span class="card-thumb" style="${bg};border-color:${t.accent}">
+              <b class="ct-ovr">${c.o}</b><b class="ct-pos">${esc((c.p && c.p[0]) || "")}</b>
+            </span>
+            <span class="card-meta">
+              <b>${esc(c.n)}</b>
+              <span class="hint">${c.o} OVR${c.gk ? " · GK" : ""}${c.v ? " · " + esc(c.v) : ""}</span>
+            </span>
+          </div>`;
+        }).join("");
         cr.classList.add("open");
         $$("#card-results .card-item[data-ci]").forEach((el) => (el.onclick = () => applyCard(State._cardRes[+el.dataset.ci])));
       }, 140);

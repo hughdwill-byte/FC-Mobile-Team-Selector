@@ -25,7 +25,7 @@ const THEMES = {
 // Base promo code (letters only, after stripping season digits/suffixes) -> theme key.
 const CODE_TO_THEME = {
   TOTY:"toty", TOTS:"tots", TWG:"twg", FV:"footyverse", FOOTYVERSE:"footyverse",
-  RAGNAROK:"ragnarok", NEON:"neon", UCL:"ucl", UCLLP:"ucl", UECL:"ucl", UCLRTTF:"ucl",
+  RAGNAROK:"ragnarok", RA:"ragnarok", NEON:"neon", UTOTS:"tots", UCL:"ucl", UCLLP:"ucl", UECL:"ucl", UCLRTTF:"ucl",
   UEFADC:"dreamchasers", UEFA:"ucl", LALIGA:"laliga", BO:"ballondor", GE:"gloriouseras",
   CAP:"captains", CAPP:"cappedlegends", ANN:"anniversary", ANS:"anniversary",
   WW:"winter", FF:"festive", FB:"flashback", FBC:"flashback",

@@ -267,3 +267,17 @@ input[readonly] { opacity:.75; cursor:not-allowed; background:rgba(255,255,255,.
 .card-modal.hidden { display:none; }
 .card-modal-inner { max-width:min(92vw,420px); }
 .card-modal-img { width:100%; display:block; border-radius:16px; box-shadow:0 16px 60px rgba(0,0,0,.6); }
+
+/* Themed card thumbnails in the add-player search results */
+.card-item { justify-content: flex-start; }
+.card-thumb { position: relative; flex: 0 0 auto; width: 46px; height: 62px; border-radius: 7px;
+  border: 2px solid var(--line); background-size: cover; background-position: center center;
+  overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,.4); }
+.card-thumb::after { content: ""; position: absolute; inset: 0;
+  background: linear-gradient(180deg, rgba(6,10,16,.12), rgba(6,10,16,.78)); }
+.ct-ovr { position: absolute; top: 3px; left: 5px; z-index: 1; font-size: 15px; font-weight: 800;
+  color: #fff; line-height: 1; text-shadow: 0 1px 3px rgba(0,0,0,.85); }
+.ct-pos { position: absolute; bottom: 3px; left: 5px; z-index: 1; font-size: 9px; font-weight: 700;
+  color: #fff; letter-spacing: .5px; text-shadow: 0 1px 3px rgba(0,0,0,.85); }
+.card-meta { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.card-meta > b { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
