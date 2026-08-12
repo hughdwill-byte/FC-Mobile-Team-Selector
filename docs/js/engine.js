@@ -903,9 +903,23 @@ function searchCards(query, limit) {
   return hits.slice(0, limit).map((x) => x[1]);
 }
 // Convert a card into a player body the editor can use (stats already mapped, GK-aware).
+// Map a RenderZ playstyle name to the app's playstyle list (case-insensitive, with a few aliases).
+const PLAYSTYLE_ALIAS = { "accelerator": "Acceleration", "bullet pass": "Bullet Pass", "whipped cross": "Whipped Crosser" };
+function mapPlaystyle(raw) {
+  const low = String(raw || "").trim().toLowerCase();
+  if (PLAYSTYLE_ALIAS[low]) return PLAYSTYLE_ALIAS[low];
+  const keys = Object.keys(loadRule("playstyles").styles || {});
+  return keys.find((k) => k.toLowerCase() === low) || null;   // null => not a known app playstyle
+}
 function cardToPlayer(card) {
-  const body = { name: card.n, ovr: card.o, positions: (card.p || []).slice(), variant: card.v || "", is_gk: !!card.gk };
+  const body = { name: card.n, ovr: card.o, positions: (card.p || []).slice(),
+    rankup_positions: (card.ru || []).slice(), variant: card.v || "", is_gk: !!card.gk };
   MAIN_STATS.forEach((s, i) => { body[s] = card.s[i]; });
+  // Playstyles: [[name, level], ...] -> {name, plus}; Level 2 is the gold (PlayStyle+) version.
+  body.playstyles = (card.ps || [])
+    .map(([nm, lvl]) => ({ name: mapPlaystyle(nm), plus: (Number(lvl) || 1) >= 2 }))
+    .filter((x) => x.name)
+    .slice(0, 2);
   return body;
 }
 window.API.searchCards = (q) => loadCards().then(() => searchCards(q, 40));

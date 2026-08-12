@@ -41,15 +41,45 @@ def prettify_variant(v):
     return str(v).replace("_", " ").strip()
 
 
-def positions(row):
+import re
+
+
+def _split_pos(raw):
     out = []
-    for raw in [row.get("position"), row.get("alt_positions")]:
-        if not raw:
-            continue
+    if raw:
         for p in str(raw).replace("/", ",").split(","):
             p = p.strip().upper()
             if p and p not in out:
                 out.append(p)
+    return out
+
+
+def main_positions(row):
+    # X (position_detail) is the position(s) the card plays now; fall back to the plain column.
+    return _split_pos(row.get("position_detail") or row.get("position"))
+
+
+def rankup_positions(row, main):
+    # Y (alt_positions_detail) are alternates that unlock after ranking the card up; keep them separate.
+    return [p for p in _split_pos(row.get("alt_positions_detail") or row.get("alt_positions")) if p not in main]
+
+
+def playstyles(row):
+    # AJ looks like "Rapid (Level 2) | Clinical Finisher (Level 1)". Keep raw name + level; the app maps
+    # names and treats Level 2 as the gold (PlayStyle+) version.
+    raw = row.get("playstyles")
+    if not raw:
+        return []
+    out = []
+    for part in str(raw).split("|"):
+        part = part.strip()
+        if not part:
+            continue
+        m = re.match(r"(.+?)\s*\(Level\s*(\d)\)\s*$", part)
+        if m:
+            out.append([m.group(1).strip(), int(m.group(2))])
+        else:
+            out.append([part, 1])
     return out
 
 
@@ -71,18 +101,26 @@ def build(xlsx: Path) -> dict:
         name = row.get("name")
         if not name:
             continue
-        is_gk = str(row.get("position") or "").upper() == "GK"
+        main = main_positions(row)
+        is_gk = "GK" in main or str(row.get("position") or "").upper() == "GK"
         cols = GK if is_gk else OUTFIELD
         stats = [num(row.get(c)) for c in cols]
-        cards.append({
+        card = {
             "id": str(row.get("card_id")),
             "n": str(name),
             "o": num(row.get("overall")),
-            "p": positions(row),
+            "p": main,
             "gk": 1 if is_gk else 0,
             "s": stats,
             "v": prettify_variant(row.get("variant")),
-        })
+        }
+        ru = rankup_positions(row, main)
+        if ru:
+            card["ru"] = ru               # alt positions that unlock on rank up
+        ps = playstyles(row)
+        if ps:
+            card["ps"] = ps               # [[name, level], ...]
+        cards.append(card)
     # newest/highest first is nice for ties; keep sheet order otherwise
     return {
         "season": xlsx.stem.split("_")[-1] if "_" in xlsx.stem else "",

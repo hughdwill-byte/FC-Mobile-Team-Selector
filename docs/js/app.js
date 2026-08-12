@@ -516,6 +516,8 @@ function applyCard(card) {
   p.base_ovr = body.ovr;                 // card OVR is the level-0/rank-0 base
   p.variant = body.variant || "";       // promo/season, used to theme the player card
   p.positions = (body.positions || []).slice();
+  p.rankup_positions = (body.rankup_positions || []).slice();   // alts that unlock on rank up
+  if (body.playstyles && body.playstyles.length) p.playstyles = body.playstyles.slice();
   // Card stats are the BASE stats (level 0, rank 0). Fill Base stats; current stats are then
   // auto-calculated from base + your training level / rank / skill points (see the toggle).
   const base = {};
