@@ -208,18 +208,16 @@ async function renderSquad(app) {
         : ""}. <span class="hint">This is what to push for.</span>
     </div>` : "";
 
-  const to = State.squad.team_ovr, top = State.squad.team_ovr_potential;
+  const to = State.squad.team_ovr, best = State.squad.team_ovr_best, top = State.squad.team_ovr_potential;
   const teamOvrPanel = to ? `
     <div class="panel" style="border-color:#243a52">
       <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">
         <div><div class="hint">Team OVR</div><div style="font-size:32px;font-weight:800;line-height:1">${to.team_ovr}</div></div>
         <div class="hint" style="flex:1 1 240px">
-          <b>${to.base_ovr_component}</b> (avg base OVR ${to.avg_base_ovr.toFixed(1)}) + <b>${to.rank_component}</b> (avg rank ${to.avg_rank.toFixed(2)})
-          · best over a <b>${to.squad_size}-card</b> squad.
-          ${top && top.team_ovr > to.team_ovr ? `Ranking everyone up reaches <b class="gain-pos">${top.team_ovr}</b>.` : ""}
-          <br>Next +1 base-OVR breakpoint: <b>${to.next_ovr_breakpoint}</b> more base-OVR point${to.next_ovr_breakpoint===1?"":"s"} across the squad;
-          next +1 rank breakpoint: <b>${to.next_rank_breakpoint}</b> more rank${to.next_rank_breakpoint===1?"":"s"}.
-          <span class="hint">Training level and skill points don't affect Team OVR — only base OVR and rank do.</span>
+          <b>${to.base_ovr_component}</b> (avg base OVR ${to.avg_base_ovr.toFixed(1)}) + <b>${to.rank_component}</b> (avg rank ${to.avg_rank.toFixed(2)}) over your <b>${to.size}</b> players — matches the in-game number.
+          ${best && best.team_ovr > to.team_ovr ? `<br>Best possible: <b class="gain-pos">${best.team_ovr}</b> by fielding your top <b>${best.squad_size}</b> and leaving weak sub slots empty.` : ""}
+          ${top && top.team_ovr > to.team_ovr ? `<br>Ranking everyone up reaches <b class="gain-pos">${top.team_ovr}</b>.` : ""}
+          <br><span class="hint">Team OVR uses only <b>base OVR + rank</b> — training and skill points don't affect it.</span>
         </div>
       </div>
     </div>` : "";
@@ -595,6 +593,7 @@ function collectEditor() {
     skill_points: Math.round(num("f-skill_points", 0)),
     notes: g("f-notes").value.trim(),
     variant: p.variant || "",           // promo/season carried from the card database
+    base_ovr: p.base_ovr != null ? p.base_ovr : null,   // rank-0 OVR (Team OVR uses this, not current)
     skill_delta: p.skill_delta || null,
     skill_choices: p.skill_choices || null,   // player-picked max-rank skills {name: level}
   };

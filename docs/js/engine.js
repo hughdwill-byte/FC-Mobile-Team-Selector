@@ -271,6 +271,7 @@ function playerToState(p) {
   const base = {}; if (p.base_stats) MAIN_STATS.forEach((s) => { if (p.base_stats[s] != null) base[s] = Number(p.base_stats[s]); });
   return {
     id: p.id, name: p.name, ovr: Number(p.ovr) || 0, rank: Number(p.rank) || 0,
+    base_ovr: p.base_ovr != null ? Number(p.base_ovr) : null,
     training_level: Number(p.training_level) || 0, stats,
     positions: (p.positions || []).slice(), rankup_positions: (p.rankup_positions || []).slice(),
     playstyles: (p.playstyles || []).map((x) => Object.assign({}, x)), growth,
@@ -279,7 +280,7 @@ function playerToState(p) {
   };
 }
 function copyState(s) {
-  return { id:s.id, name:s.name, ovr:s.ovr, rank:s.rank, training_level:s.training_level,
+  return { id:s.id, name:s.name, ovr:s.ovr, rank:s.rank, base_ovr:s.base_ovr != null ? s.base_ovr : null, training_level:s.training_level,
     stats:Object.assign({}, s.stats), positions:s.positions.slice(), rankup_positions:s.rankup_positions.slice(),
     playstyles:s.playstyles.map((x)=>Object.assign({},x)), growth:Object.assign({}, s.growth),
     growth_override: s.growth_override ? Object.assign({}, s.growth_override) : null,
@@ -433,19 +434,25 @@ function deriveCurrent(base, baseOvr, level, rank, skillDelta, skillChoices) {
 // ----------------------------------------------------------------- Team OVR (FC Mobile roster metric)
 // Team OVR = ceil(average base OVR) + ceil(average rank). Training level and skill points are excluded;
 // only the card's base OVR and its integer rank (0-5) count. A weak bench card drags both averages down.
+// Base (rank-0) OVR of a player: use the stored base_ovr, else derive it from current OVR minus rank
+// (current OVR = base + rank). Team OVR must use BASE OVR, otherwise rank gets counted twice.
+function baseOvrOf(s) {
+  if (s.base_ovr != null) return Number(s.base_ovr) || 0;
+  return Math.max(0, (Number(s.ovr) || 0) - (Number(s.rank) || 0));
+}
 function teamOvrOf(states) {
   const n = states.length;
   if (!n) return { team_ovr:0, base_ovr_component:0, rank_component:0, avg_base_ovr:0, avg_rank:0, size:0, next_ovr_breakpoint:0, next_rank_breakpoint:0 };
-  let so = 0, sr = 0; states.forEach((s) => { so += Number(s.ovr) || 0; sr += Number(s.rank) || 0; });
+  let so = 0, sr = 0; states.forEach((s) => { so += baseOvrOf(s); sr += Number(s.rank) || 0; });
   const oc = Math.ceil(so / n), rc = Math.ceil(sr / n);
   const baseRem = so % n, rankRem = sr % n;
   return { team_ovr: oc + rc, base_ovr_component: oc, rank_component: rc, avg_base_ovr: so / n, avg_rank: sr / n, size: n,
     next_ovr_breakpoint: baseRem === 0 ? n : n - baseRem, next_rank_breakpoint: rankRem === 0 ? n : n - rankRem };
 }
-// The squad (11-18 cards) that maximises Team OVR: start with the best 11 by OVR, then keep adding the next
-// card only while it doesn't lower the metric. You never have to fill all 18 slots.
+// The squad (11-18 cards) that maximises Team OVR: start with the best 11 by base OVR, then keep adding the
+// next card only while it doesn't lower the metric. You never have to fill all 18 slots.
 function bestTeamOvr(states) {
-  const sorted = states.slice().sort((a, b) => (Number(b.ovr) - Number(a.ovr)) || (Number(b.rank) - Number(a.rank)));
+  const sorted = states.slice().sort((a, b) => (baseOvrOf(b) - baseOvrOf(a)) || (Number(b.rank) - Number(a.rank)));
   if (sorted.length <= 11) { const t = teamOvrOf(sorted); t.included = sorted.map((s) => s.id); t.squad_size = sorted.length; return t; }
   let cur = sorted.slice(0, 11), best = teamOvrOf(cur).team_ovr;
   for (let k = 11; k < Math.min(18, sorted.length); k++) {
@@ -872,8 +879,9 @@ window.API = {
     let use = states;
     if (potential) { out.current_best_total = r3(bestSquadScore(states)); use = states.map(potentialState); }
     out.results = optimize(use, top || 5);
-    out.team_ovr = bestTeamOvr(states);                                    // Team OVR uses base OVR + rank (current)
-    out.team_ovr_potential = bestTeamOvr(states.map(fullyRankedUp));       // if every card were fully ranked up
+    out.team_ovr = teamOvrOf(states);                                      // your actual squad — matches the game
+    out.team_ovr_best = bestTeamOvr(states);                               // best possible (leave weak sub slots empty)
+    out.team_ovr_potential = teamOvrOf(states.map(fullyRankedUp));         // if every card were fully ranked up
     return A(out); },
   teamOvr() { const states = statesFromStore(); return A(bestTeamOvr(states)); },
   xpInfo() { return A({ per_level: XP_PER_LEVEL, total_to_max: xpToReach(30),
@@ -985,7 +993,7 @@ function loadSample(replace) {
     const base = {}; MAIN_STATS.forEach((s) => base[s] = cur[s] - off);
     const p = newPlayer();
     Object.assign(p, { name, ovr, rank, training_level:lvl }, cur);
-    p.positions = pos; p.base_stats = base;
+    p.positions = pos; p.base_stats = base; p.base_ovr = ovr;   // sample ovr is the base (rank-0) value
     p.playstyles = styles.map((x) => ({ name:x[0], plus:x[1] }));
     p.id = nextId(list); list.push(p);
   });
