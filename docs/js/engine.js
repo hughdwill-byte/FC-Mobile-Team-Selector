@@ -244,7 +244,7 @@ function savePlayers(list) { localStorage.setItem(LS_PLAYERS, JSON.stringify(lis
 function nextId(list) { return list.reduce((m, p) => Math.max(m, p.id || 0), 0) + 1; }
 
 const EDITABLE = ["name","ovr","rank","training_level", ...MAIN_STATS, "base_stats","base_ovr",
-  "positions","rankup_positions","playstyles","growth_override","skill_points","skill_level","skill_delta","notes","variant"];
+  "positions","rankup_positions","playstyles","growth_override","skill_points","skill_level","skill_delta","skill_choices","notes","variant"];
 function coerce(k, v) {
   if (v === null || v === undefined) return null;
   if (["ovr","rank","training_level","skill_points","base_ovr","skill_level"].includes(k)) { const n = parseInt(v, 10); return isNaN(n) ? 0 : n; }
@@ -255,7 +255,7 @@ function newPlayer() {
   return { id:null, name:"", ovr:50, rank:0, training_level:0,
     pace:50, shooting:50, passing:50, dribbling:50, defending:50, physical:50,
     base_stats:null, base_ovr:null, positions:[], rankup_positions:[], playstyles:[],
-    growth_override:null, skill_points:0, skill_level:0, skill_delta:null, notes:"", variant:"" };
+    growth_override:null, skill_points:0, skill_level:0, skill_delta:null, skill_choices:null, notes:"", variant:"" };
 }
 function applyData(p, data) {
   EDITABLE.forEach((k) => { if (k in data && data[k] !== null && data[k] !== undefined) p[k] = coerce(k, data[k]); });
@@ -386,10 +386,30 @@ function skillBoostPct(positions, level) {
     subs.forEach((sub) => { const h = SUBATTR_TO_MAIN[sub]; if (h) pct[h] += (0.05 * level) / 3; }));
   return pct;
 }
+// Player-choice skills (picked at max rank), effect on the six stats per level (each level = +20 to its
+// sub-attributes). Applied on top of the forced-skill delta when the user says they chose them.
+const CHOICE_DELTAS = {
+  SCORING:   [0, 15, 0, 0, 3, 0],
+  PASSING:   [0, 0, 17, 0, 0, 0],
+  DRIBBLING: [0, 0, 0, 18, 0, 0],
+  DEFENDING: [0, 0, 0, 0, 17, 0],
+  PHYSICAL:  [0, 0, 0, 2, 0, 20],
+};
+const CHOICE_SKILLS = Object.keys(CHOICE_DELTAS);
+// Sum the chosen skills' deltas: skillChoices is { SCORING: level, ... }.
+function choiceDelta(skillChoices) {
+  const out = [0, 0, 0, 0, 0, 0];
+  if (skillChoices) for (const name in skillChoices) {
+    const lvl = Number(skillChoices[name]) || 0, d = CHOICE_DELTAS[name];
+    if (lvl > 0 && d) for (let i = 0; i < 6; i++) out[i] += d[i] * lvl;
+  }
+  return out;
+}
+
 // current = base + training + skill delta (scaled by rank); rank also raises OVR.
 // skillDelta is the card's maxed forced-skill effect on the six stats ([PAC..PHY]); forced skills fill
 // in as the card ranks up (~complete by rank 4), so we scale that delta by min(rank/4, 1).
-function deriveCurrent(base, baseOvr, level, rank, skillDelta) {
+function deriveCurrent(base, baseOvr, level, rank, skillDelta, skillChoices) {
   const g = loadRule("growth"), boost = g.training_boost || [];
   const lvl = Math.max(0, Math.min(g.max_training_level || 30, Math.round(Number(level) || 0)));
   const tb = boost.length ? (lvl < boost.length ? boost[lvl] : boost[boost.length - 1]) : 0;
@@ -397,10 +417,11 @@ function deriveCurrent(base, baseOvr, level, rank, skillDelta) {
   const rk = Math.max(0, Math.min(maxR, Math.round(Number(rank) || 0)));
   const sk = Math.min(rk / 4, 1);
   const sd = Array.isArray(skillDelta) ? skillDelta : null;
+  const ch = choiceDelta(skillChoices);                      // player-picked skills (not rank-scaled)
   const stats = {};
   MAIN_STATS.forEach((s, i) => {
     const b = Number((base || {})[s]);
-    const d = sd && sd[i] != null ? Number(sd[i]) * sk : 0;
+    const d = (sd && sd[i] != null ? Number(sd[i]) * sk : 0) + ch[i];
     stats[s] = isNaN(b) ? null : Math.floor(b + tb + d);
   });
   let ovr = Number(baseOvr);                                  // rank raises OVR only (not flat stats)
@@ -979,5 +1000,5 @@ window.API.clearAll = () => { savePlayers([]); return A({ ok:true }); };
 window.__engine = { optimize, planUpgrades, planTrainingBudget, takeoverPlan, statesFromStore, bestSquadScore, potentialState,
   bestTeamOvr, teamOvrOf, trainStep, withTrainingLevel, xpToReach, foodXp, skillMainStats, deriveCurrent };
 // Synchronous helper for the editor's live "auto-calc current stats" fields.
-window.StatCalc = { deriveCurrent };
+window.StatCalc = { deriveCurrent, CHOICE_SKILLS, CHOICE_DELTAS };
 })();

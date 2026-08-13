@@ -355,6 +355,8 @@ function buildEditorForm() {
   const val = (v) => (v === "" || v === null || v === undefined ? "" : v);
   const hasBase = !!(p.base_stats && stats.some((s) => p.base_stats[s] != null));
   const autoOn = hasBase && p._autoCurrent !== false;   // auto-fill current stats from base + training/rank/skills
+  const choiceSkills = (window.StatCalc && StatCalc.CHOICE_SKILLS) || [];
+  const titleCase = (s) => s.charAt(0) + s.slice(1).toLowerCase();
   const posChips = State.meta.positions.map((code) =>
     `<span class="chip pos ${p.positions.includes(code) ? "" : "off"}" data-pos="${code}"
       style="cursor:pointer;${p.positions.includes(code) ? "" : "opacity:.35"}">${code}</span>`).join(" ");
@@ -393,8 +395,17 @@ function buildEditorForm() {
       <div class="statgrid">
         ${stats.map((s) => `<div class="field" style="margin:0"><label>${statLabel(s, isGk)}</label><input id="f-${s}" type="number" value="${val(p[s])}" placeholder="—" ${autoOn ? "readonly" : ""} /></div>`).join("")}
       </div>
-      ${autoOn ? `<div class="hint" style="margin-top:6px">Auto-filled from <b>base + training + skills</b> (rank raises OVR and scales the card's forced skills${State.editing.skill_delta ? "" : " — no skill data for this card"}). Player-choice skills at max rank aren't included; untick to edit by hand.</div>` : ""}
+      ${autoOn ? `<div class="hint" style="margin-top:6px">Auto-filled from <b>base + training + skills</b> (rank raises OVR and scales the card's forced skills${State.editing.skill_delta ? "" : " — no skill data for this card"}). Untick to edit by hand.</div>` : ""}
     </div>
+    ${(autoOn && !isGk && choiceSkills.length) ? `
+    <div class="field"><label>Chosen skills at max rank (optional)</label>
+      <div class="hint" style="margin-bottom:6px">The skill(s) you picked to rank up at the end — set how many levels you put into each. Adds on top of the auto-calc.</div>
+      <div class="statgrid">
+        ${choiceSkills.map((c) => `<div class="field" style="margin:0"><label>${titleCase(c)}</label>
+          <input id="sc-${c}" type="number" min="0" placeholder="0"
+            value="${p.skill_choices && p.skill_choices[c] ? p.skill_choices[c] : ""}" /></div>`).join("")}
+      </div>
+    </div>` : ""}
     <div class="field"><label>Positions (click to toggle)</label><div id="pos-chips">${posChips}</div></div>
     <div class="field"><label>Unlocks on next rank up (optional)</label>
       <input id="f-rankup_positions" value="${esc((p.rankup_positions || []).join(", "))}" placeholder="e.g. CF, RW" /></div>
@@ -492,8 +503,12 @@ function buildEditorForm() {
     const base = {};
     stats.forEach((s) => { const v = g("b-" + s).value.trim(); base[s] = v === "" ? null : Number(v); });
     const baseOvr = State.editing.base_ovr != null ? State.editing.base_ovr : null;
-    // Current = base + training + the card's forced-skill delta (scaled by rank); rank also raises OVR.
-    const res = StatCalc.deriveCurrent(base, baseOvr, g("f-training_level").value, g("f-rank").value, State.editing.skill_delta);
+    // Player-choice skills the user picked at max rank.
+    const choices = {};
+    (StatCalc.CHOICE_SKILLS || []).forEach((c) => { const el = g("sc-" + c); if (el) { const v = Number(el.value) || 0; if (v > 0) choices[c] = v; } });
+    State.editing.skill_choices = Object.keys(choices).length ? choices : null;
+    // Current = base + training + forced-skill delta (rank-scaled) + chosen skills; rank also raises OVR.
+    const res = StatCalc.deriveCurrent(base, baseOvr, g("f-training_level").value, g("f-rank").value, State.editing.skill_delta, State.editing.skill_choices);
     stats.forEach((s) => { if (res.stats[s] != null) g("f-" + s).value = res.stats[s]; });
     if (baseOvr != null && res.ovr != null) g("f-ovr").value = res.ovr;
   }
@@ -501,7 +516,7 @@ function buildEditorForm() {
   if (autoBox) autoBox.onchange = () => { syncEditor(); State.editing._autoCurrent = autoBox.checked; buildEditorForm(); };
   if (autoOn) {
     recalcCurrent();
-    ["f-training_level", "f-rank", "f-skill_points", ...stats.map((s) => "b-" + s)]
+    ["f-training_level", "f-rank", "f-skill_points", ...stats.map((s) => "b-" + s), ...choiceSkills.map((c) => "sc-" + c)]
       .forEach((id) => { const el = document.getElementById(id); if (el) el.addEventListener("input", recalcCurrent); });
   }
 }
@@ -580,6 +595,8 @@ function collectEditor() {
     skill_points: Math.round(num("f-skill_points", 0)),
     notes: g("f-notes").value.trim(),
     variant: p.variant || "",           // promo/season carried from the card database
+    skill_delta: p.skill_delta || null,
+    skill_choices: p.skill_choices || null,   // player-picked max-rank skills {name: level}
   };
 }
 
