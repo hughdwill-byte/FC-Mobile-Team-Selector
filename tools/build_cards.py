@@ -28,6 +28,45 @@ import openpyxl
 
 ROOT = Path(__file__).resolve().parent.parent
 OUT = ROOT / "docs" / "data" / "cards.json"
+SKILL_FX = ROOT / "docs" / "data" / "skill_effects.json"
+MAIN6 = ["PAC", "SHO", "PAS", "DRI", "DEF", "PHY"]
+
+
+def load_skill_fx():
+    try:
+        return json.loads(SKILL_FX.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+
+
+def skill_delta(path_str, fx):
+    """Maxed forced-skill effect on the six headline stats, from a card's skill_boost_path.
+    Skills add FLAT amounts to sub-attributes; the headline delta is weight*boost summed up.
+    Roles use their level-2 amount; skill lines their single amount. ALL-CAPS entries are the
+    player's manual choice and are skipped. Returns [PAC,SHO,PAS,DRI,DEF,PHY] or None."""
+    if not path_str or not fx:
+        return None
+    skills, aliases, weights = fx["skills"], fx.get("aliases", {}), fx["weights"]
+    boosts = {}
+    for part in str(path_str).split(">"):
+        p = part.strip()
+        if not p or p.isupper():           # blank or ALL-CAPS player choice
+            continue
+        entry = skills.get(aliases.get(p, p))
+        if not entry:
+            continue
+        amt = entry["l2"] if entry["l2"] is not None else entry["l1"]
+        if amt is None:
+            continue
+        for s in entry["subs"]:
+            boosts[s] = boosts.get(s, 0) + amt
+    if not boosts:
+        return None
+    out = []
+    for head in MAIN6:
+        w = weights.get(head, {})
+        out.append(round(sum(w.get(s, 0) * b for s, b in boosts.items())))
+    return out if any(out) else None
 
 # The app's six stat columns, in order: pace, shooting, passing, dribbling, defending, physical.
 OUTFIELD = ["PAC", "SHO", "PAS", "DRI", "DEF", "PHY"]
@@ -95,6 +134,7 @@ def build(xlsx: Path) -> dict:
     ws = wb.active
     it = ws.iter_rows(values_only=True)
     header = list(next(it))
+    fx = load_skill_fx()
     cards = []
     for r in it:
         row = dict(zip(header, r))
@@ -120,6 +160,10 @@ def build(xlsx: Path) -> dict:
         ps = playstyles(row)
         if ps:
             card["ps"] = ps               # [[name, level], ...]
+        if not is_gk:                     # skill deltas: outfield only (GK formula differs)
+            sd = skill_delta(row.get("skill_boost_path"), fx)
+            if sd:
+                card["sd"] = sd           # maxed forced-skill effect on the six stats
         cards.append(card)
     # newest/highest first is nice for ties; keep sheet order otherwise
     return {

@@ -244,7 +244,7 @@ function savePlayers(list) { localStorage.setItem(LS_PLAYERS, JSON.stringify(lis
 function nextId(list) { return list.reduce((m, p) => Math.max(m, p.id || 0), 0) + 1; }
 
 const EDITABLE = ["name","ovr","rank","training_level", ...MAIN_STATS, "base_stats","base_ovr",
-  "positions","rankup_positions","playstyles","growth_override","skill_points","skill_level","notes","variant"];
+  "positions","rankup_positions","playstyles","growth_override","skill_points","skill_level","skill_delta","notes","variant"];
 function coerce(k, v) {
   if (v === null || v === undefined) return null;
   if (["ovr","rank","training_level","skill_points","base_ovr","skill_level"].includes(k)) { const n = parseInt(v, 10); return isNaN(n) ? 0 : n; }
@@ -255,7 +255,7 @@ function newPlayer() {
   return { id:null, name:"", ovr:50, rank:0, training_level:0,
     pace:50, shooting:50, passing:50, dribbling:50, defending:50, physical:50,
     base_stats:null, base_ovr:null, positions:[], rankup_positions:[], playstyles:[],
-    growth_override:null, skill_points:0, skill_level:0, notes:"", variant:"" };
+    growth_override:null, skill_points:0, skill_level:0, skill_delta:null, notes:"", variant:"" };
 }
 function applyData(p, data) {
   EDITABLE.forEach((k) => { if (k in data && data[k] !== null && data[k] !== undefined) p[k] = coerce(k, data[k]); });
@@ -386,19 +386,27 @@ function skillBoostPct(positions, level) {
     subs.forEach((sub) => { const h = SUBATTR_TO_MAIN[sub]; if (h) pct[h] += (0.05 * level) / 3; }));
   return pct;
 }
-function deriveCurrent(base, baseOvr, level, rank, positions, skillLevel) {
+// current = base + training + skill delta (scaled by rank); rank also raises OVR.
+// skillDelta is the card's maxed forced-skill effect on the six stats ([PAC..PHY]); forced skills fill
+// in as the card ranks up (~complete by rank 4), so we scale that delta by min(rank/4, 1).
+function deriveCurrent(base, baseOvr, level, rank, skillDelta) {
   const g = loadRule("growth"), boost = g.training_boost || [];
   const lvl = Math.max(0, Math.min(g.max_training_level || 30, Math.round(Number(level) || 0)));
   const tb = boost.length ? (lvl < boost.length ? boost[lvl] : boost[boost.length - 1]) : 0;
   const ru = loadRule("rankup"); const maxR = ru.max_rank || 5;
   const rk = Math.max(0, Math.min(maxR, Math.round(Number(rank) || 0)));
-  const pct = skillBoostPct(positions, skillLevel);          // skills add a differential % per stat
+  const sk = Math.min(rk / 4, 1);
+  const sd = Array.isArray(skillDelta) ? skillDelta : null;
   const stats = {};
-  MAIN_STATS.forEach((s) => { const b = Number((base || {})[s]); stats[s] = isNaN(b) ? null : Math.floor((b + tb) * (1 + pct[s])); });
+  MAIN_STATS.forEach((s, i) => {
+    const b = Number((base || {})[s]);
+    const d = sd && sd[i] != null ? Number(sd[i]) * sk : 0;
+    stats[s] = isNaN(b) ? null : Math.floor(b + tb + d);
+  });
   let ovr = Number(baseOvr);                                  // rank raises OVR only (not flat stats)
   if (!isNaN(ovr)) { const og = ru.ovr_gain || []; for (let r = 0; r < rk; r++) ovr += (r < og.length ? og[r] : 1); }
   else ovr = null;
-  return { stats, ovr, skill_pct: pct };
+  return { stats, ovr };
 }
 
 // ----------------------------------------------------------------- Team OVR (FC Mobile roster metric)
@@ -913,7 +921,8 @@ function mapPlaystyle(raw) {
 }
 function cardToPlayer(card) {
   const body = { name: card.n, ovr: card.o, positions: (card.p || []).slice(),
-    rankup_positions: (card.ru || []).slice(), variant: card.v || "", is_gk: !!card.gk };
+    rankup_positions: (card.ru || []).slice(), variant: card.v || "", is_gk: !!card.gk,
+    skill_delta: card.sd ? card.sd.slice() : null };
   MAIN_STATS.forEach((s, i) => { body[s] = card.s[i]; });
   // Playstyles: [[name, level], ...] -> {name, plus}; Level 2 is the gold (PlayStyle+) version.
   body.playstyles = (card.ps || [])

@@ -1,0 +1,667 @@
+{
+ "note": "FC Mobile skill-boost effects (community-compiled). Flat additions to sub-attributes; roles have 2 levels, skill lines and player-choice are single. Used to precompute each card's skill delta.",
+ "aliases": {
+  "Inside Forward": "Inverted Winger/ Inside Foreward"
+ },
+ "weights": {
+  "PAC": {
+   "Acceleration": 0.498,
+   "Sprint Speed": 0.5
+  },
+  "SHO": {
+   "Finishing": 0.4,
+   "Long Shot": 0.06,
+   "Shot Power": 0.295,
+   "Positioning": 0.118,
+   "Volley": 0.052,
+   "Penalties": 0.072
+  },
+  "PAS": {
+   "Short Passing": 0.306,
+   "Long Passing": 0.243,
+   "Vision": 0.254,
+   "Crossing": 0.027,
+   "Curve": 0.14,
+   "Free Kick": 0.024
+  },
+  "DRI": {
+   "Dribbling": 0.185,
+   "Balance": 0.096,
+   "Agility": 0.367,
+   "Reactions": 0.157,
+   "Ball Control": 0.185
+  },
+  "DEF": {
+   "Marking": 0.322,
+   "Standing Tackle": 0.311,
+   "Sliding Tackle": 0.207,
+   "Awareness": 0.026,
+   "Heading": 0.132
+  },
+  "PHY": {
+   "Strength": 0.45,
+   "Aggression": 0.3,
+   "Jumping": 0.25,
+   "Stamina": 0.0
+  }
+ },
+ "skills": {
+  "Advance Forward": {
+   "type": "Role",
+   "subs": [
+    "Acceleration",
+    "Dribbling",
+    "Sprint Speed",
+    "Finishing",
+    "Shot Power",
+    "Strength",
+    "Positioning",
+    "Volley"
+   ],
+   "l1": 10,
+   "l2": 20
+  },
+  "Attacking Midfielder": {
+   "type": "Role",
+   "subs": [
+    "Short Passing",
+    "Positioning",
+    "Long Shot"
+   ],
+   "l1": 7,
+   "l2": 14
+  },
+  "Ball-Playing Defender": {
+   "type": "Role",
+   "subs": [
+    "Acceleration",
+    "Awareness",
+    "Dribbling",
+    "Long Passing",
+    "Sprint Speed",
+    "Short Passing",
+    "Standing Tackle",
+    "Vision"
+   ],
+   "l1": 10,
+   "l2": 20
+  },
+  "Box-To-Box": {
+   "type": "Role",
+   "subs": [
+    "Acceleration",
+    "Awareness",
+    "Ball Control",
+    "Sprint Speed",
+    "Short Passing",
+    "Strength",
+    "Balance",
+    "Standing Tackle"
+   ],
+   "l1": 10,
+   "l2": 20
+  },
+  "Central Midfielder": {
+   "type": "Role",
+   "subs": [
+    "Crossing",
+    "Long Passing",
+    "Short Passing"
+   ],
+   "l1": 7,
+   "l2": 14
+  },
+  "Centre Back": {
+   "type": "Role",
+   "subs": [
+    "Awareness",
+    "Marking",
+    "Standing Tackle"
+   ],
+   "l1": 7,
+   "l2": 14
+  },
+  "Complete Fullback": {
+   "type": "Role",
+   "subs": [
+    "Acceleration",
+    "Awareness",
+    "Crossing",
+    "Sprint Speed",
+    "Strength",
+    "Balance",
+    "Standing Tackle",
+    "Sliding Tackle"
+   ],
+   "l1": 10,
+   "l2": 20
+  },
+  "Complete Wide Midfielder": {
+   "type": "Role",
+   "subs": [
+    "Aggression",
+    "Ball Control",
+    "Crossing",
+    "Sprint Speed",
+    "Short Passing",
+    "Balance"
+   ],
+   "l1": 10,
+   "l2": 20
+  },
+  "Deep-Lying Playmaker": {
+   "type": "Role",
+   "subs": [
+    "Ball Control",
+    "Crossing",
+    "Long Passing",
+    "Sprint Speed",
+    "Short Passing",
+    "Vision"
+   ],
+   "l1": 10,
+   "l2": 20
+  },
+  "Defender": {
+   "type": "Role",
+   "subs": [
+    "Acceleration",
+    "Heading",
+    "Marking",
+    "Sprint Speed",
+    "Strength",
+    "Jumping",
+    "Standing Tackle",
+    "Sliding Tackle"
+   ],
+   "l1": 10,
+   "l2": 20
+  },
+  "Defensive Midfielder": {
+   "type": "Role",
+   "subs": [
+    "Awareness",
+    "Ball Control",
+    "Standing Tackle"
+   ],
+   "l1": 7,
+   "l2": 14
+  },
+  "False 9": {
+   "type": "Role",
+   "subs": [
+    "Acceleration",
+    "Ball Control",
+    "Dribbling",
+    "Short Passing",
+    "Positioning",
+    "Agility"
+   ],
+   "l1": 10,
+   "l2": 20
+  },
+  "Falseback": {
+   "type": "Role",
+   "subs": [
+    "Awareness",
+    "Ball Control",
+    "Sprint Speed",
+    "Short Passing",
+    "Standing Tackle",
+    "Vision"
+   ],
+   "l1": 10,
+   "l2": 20
+  },
+  "Fullback": {
+   "type": "Role",
+   "subs": [
+    "Awareness",
+    "Standing Tackle",
+    "Sliding Tackle"
+   ],
+   "l1": 7,
+   "l2": 14
+  },
+  "Goal Keeper": {
+   "type": "Role",
+   "subs": [
+    "Reactions",
+    "GK Diving",
+    "Jumping"
+   ],
+   "l1": 7,
+   "l2": 14
+  },
+  "Half-Winger": {
+   "type": "Role",
+   "subs": [
+    "Acceleration",
+    "Ball Control",
+    "Dribbling",
+    "Short Passing",
+    "Positioning",
+    "Vision"
+   ],
+   "l1": 10,
+   "l2": 20
+  },
+  "Holding": {
+   "type": "Role",
+   "subs": [
+    "Aggression",
+    "Awareness",
+    "Marking",
+    "Sprint Speed",
+    "Strength",
+    "Standing Tackle"
+   ],
+   "l1": 10,
+   "l2": 20
+  },
+  "Inverted Winger/ Inside Foreward": {
+   "type": "Role",
+   "subs": [
+    "Ball Control",
+    "Dribbling",
+    "Sprint Speed",
+    "Finishing",
+    "Agility",
+    "Curve"
+   ],
+   "l1": 10,
+   "l2": 20
+  },
+  "Playmaker": {
+   "type": "Role",
+   "subs": [
+    "Acceleration",
+    "Ball Control",
+    "Dribbling",
+    "Long Passing",
+    "Sprint Speed",
+    "Short Passing",
+    "Curve",
+    "Vision"
+   ],
+   "l1": 10,
+   "l2": 20
+  },
+  "Poacher": {
+   "type": "Role",
+   "subs": [
+    "Acceleration",
+    "Heading",
+    "Sprint Speed",
+    "Finishing",
+    "Positioning",
+    "Reactions",
+    "Agility",
+    "Volley"
+   ],
+   "l1": 10,
+   "l2": 20
+  },
+  "Shadow Striker": {
+   "type": "Role",
+   "subs": [
+    "Acceleration",
+    "Ball Control",
+    "Sprint Speed",
+    "Finishing",
+    "Shot Power",
+    "Positioning",
+    "Reactions",
+    "Curve"
+   ],
+   "l1": 10,
+   "l2": 20
+  },
+  "Shot Stopper": {
+   "type": "Role",
+   "subs": [
+    "GK Reflexes",
+    "Strength",
+    "GK Handling",
+    "GK Positioning",
+    "Reactions",
+    "GK Diving"
+   ],
+   "l1": 10,
+   "l2": 20
+  },
+  "Stopper": {
+   "type": "Role",
+   "subs": [
+    "Acceleration",
+    "Aggression",
+    "Awareness",
+    "Marking",
+    "Sprint Speed",
+    "Reactions",
+    "Standing Tackle",
+    "Sliding Tackle"
+   ],
+   "l1": 10,
+   "l2": 20
+  },
+  "Striker": {
+   "type": "Role",
+   "subs": [
+    "Finishing",
+    "Shot Power",
+    "Volley"
+   ],
+   "l1": 7,
+   "l2": 14
+  },
+  "Sweeper Keeper": {
+   "type": "Role",
+   "subs": [
+    "Long Passing",
+    "Short Passing",
+    "GK Reflexes",
+    "Reactions",
+    "Agility",
+    "GK Kicking"
+   ],
+   "l1": 10,
+   "l2": 20
+  },
+  "Target Forward": {
+   "type": "Role",
+   "subs": [
+    "Acceleration",
+    "Ball Control",
+    "Heading",
+    "Sprint Speed",
+    "Short Passing",
+    "Finishing",
+    "Strength",
+    "Jumping"
+   ],
+   "l1": 10,
+   "l2": 20
+  },
+  "Traditional Winger": {
+   "type": "Role",
+   "subs": [
+    "Ball Control",
+    "Crossing",
+    "Dribbling",
+    "Long Passing",
+    "Sprint Speed",
+    "Agility"
+   ],
+   "l1": 10,
+   "l2": 20
+  },
+  "Wide Midfielder": {
+   "type": "Role",
+   "subs": [
+    "Crossing",
+    "Dribbling",
+    "Vision"
+   ],
+   "l1": 7,
+   "l2": 14
+  },
+  "Wide Playmaker": {
+   "type": "Role",
+   "subs": [
+    "Acceleration",
+    "Ball Control",
+    "Crossing",
+    "Long Passing",
+    "Sprint Speed",
+    "Short Passing",
+    "Agility",
+    "Vision"
+   ],
+   "l1": 10,
+   "l2": 20
+  },
+  "Wingback": {
+   "type": "Role",
+   "subs": [
+    "Acceleration",
+    "Awareness",
+    "Ball Control",
+    "Crossing",
+    "Short Passing",
+    "Sliding Tackle"
+   ],
+   "l1": 10,
+   "l2": 20
+  },
+  "Winger": {
+   "type": "Role",
+   "subs": [
+    "Acceleration",
+    "Crossing",
+    "Positioning"
+   ],
+   "l1": 7,
+   "l2": 14
+  },
+  "Awareness": {
+   "type": "Skill line",
+   "subs": [
+    "Awareness",
+    "Positioning",
+    "Vision"
+   ],
+   "l1": 15,
+   "l2": 15
+  },
+  "Crossing": {
+   "type": "Skill line",
+   "subs": [
+    "Crossing",
+    "Long Passing",
+    "Vision"
+   ],
+   "l1": 15,
+   "l2": 15
+  },
+  "Defending": {
+   "type": "Skill line",
+   "subs": [
+    "Marking",
+    "Standing Tackle",
+    "Sliding Tackle"
+   ],
+   "l1": 15,
+   "l2": 15
+  },
+  "Dribbling": {
+   "type": "Skill line",
+   "subs": [
+    "Ball Control",
+    "Dribbling",
+    "Agility"
+   ],
+   "l1": 15,
+   "l2": 15
+  },
+  "Header": {
+   "type": "Skill line",
+   "subs": [
+    "Heading",
+    "Balance",
+    "Jumping"
+   ],
+   "l1": 15,
+   "l2": 15
+  },
+  "Long Shot": {
+   "type": "Skill line",
+   "subs": [
+    "Shot Power",
+    "Long Shot",
+    "Curve"
+   ],
+   "l1": 15,
+   "l2": 15
+  },
+  "Passing": {
+   "type": "Skill line",
+   "subs": [
+    "Long Passing",
+    "Short Passing",
+    "Vision"
+   ],
+   "l1": 15,
+   "l2": 15
+  },
+  "Physical": {
+   "type": "Skill line",
+   "subs": [
+    "Aggression",
+    "Strength",
+    "Balance"
+   ],
+   "l1": 15,
+   "l2": 15
+  },
+  "Shooting": {
+   "type": "Skill line",
+   "subs": [
+    "Finishing",
+    "Shot Power",
+    "Long Shot"
+   ],
+   "l1": 15,
+   "l2": 15
+  },
+  "GK Passing": {
+   "type": "Skill line",
+   "subs": [
+    "Long Passing",
+    "GK Kicking",
+    "Vision"
+   ],
+   "l1": 15,
+   "l2": 15
+  },
+  "GK Rush": {
+   "type": "Skill line",
+   "subs": [
+    "Acceleration",
+    "GK Handling",
+    "GK Positioning"
+   ],
+   "l1": 15,
+   "l2": 15
+  },
+  "Highballs": {
+   "type": "Skill line",
+   "subs": [
+    "GK Handling",
+    "GK Positioning",
+    "Jumping"
+   ],
+   "l1": 15,
+   "l2": 15
+  },
+  "SCORING": {
+   "type": "Player choice (all-caps)",
+   "subs": [
+    "Heading",
+    "Finishing",
+    "Shot Power",
+    "Long Shot"
+   ],
+   "l1": 20,
+   "l2": 20
+  },
+  "PASSING": {
+   "type": "Player choice (all-caps)",
+   "subs": [
+    "Crossing",
+    "Long Passing",
+    "Short Passing",
+    "Vision"
+   ],
+   "l1": 20,
+   "l2": 20
+  },
+  "DRIBBLING": {
+   "type": "Player choice (all-caps)",
+   "subs": [
+    "Ball Control",
+    "Dribbling",
+    "Reactions",
+    "Agility"
+   ],
+   "l1": 20,
+   "l2": 20
+  },
+  "DEFENDING": {
+   "type": "Player choice (all-caps)",
+   "subs": [
+    "Awareness",
+    "Marking",
+    "Standing Tackle",
+    "Sliding Tackle"
+   ],
+   "l1": 20,
+   "l2": 20
+  },
+  "PHYSICAL": {
+   "type": "Player choice (all-caps)",
+   "subs": [
+    "Aggression",
+    "Strength",
+    "Balance",
+    "Jumping"
+   ],
+   "l1": 20,
+   "l2": 20
+  },
+  "GK KICKING": {
+   "type": "Player choice (all-caps)",
+   "subs": [
+    "Long Passing",
+    "Curve",
+    "GK Kicking",
+    "Vision"
+   ],
+   "l1": 20,
+   "l2": 20
+  },
+  "GK BALL-PLAYING": {
+   "type": "Player choice (all-caps)",
+   "subs": [
+    "Ball Control",
+    "Dribbling",
+    "Short Passing",
+    "Agility"
+   ],
+   "l1": 20,
+   "l2": 20
+  },
+  "GK RUSH": {
+   "type": "Player choice (all-caps)",
+   "subs": [
+    "Acceleration",
+    "Sprint Speed",
+    "GK Diving",
+    "Sliding Tackle"
+   ],
+   "l1": 20,
+   "l2": 20
+  },
+  "HIGHBALLS": {
+   "type": "Player choice (all-caps)",
+   "subs": [
+    "GK Handling",
+    "GK Positioning",
+    "Reactions",
+    "Jumping"
+   ],
+   "l1": 20,
+   "l2": 20
+  }
+ }
+}
