@@ -321,10 +321,15 @@ const STAT_WEIGHTS = {
 };
 // Sub-attributes grouped by the main stat they feed — for the "add badge" sub-attribute picker.
 const SUBATTRS_BY_STAT = {}; MAIN_STATS.forEach((s) => SUBATTRS_BY_STAT[s] = Object.keys(STAT_WEIGHTS[s]));
-// Known team badges. subs = sub-attributes each level boosts by `per_level`. Seasonal badges can be added
-// by the user; a badge may instead/also carry a direct main-stat boost via `stats:{shooting:2,...}`.
+// Known team badges. A badge records the ACTUAL in-game boosts it gives at its current level:
+//   boosts: { "Balance":12, "Vision":12, "Strength":12, "Aggression":10 }   // per sub-attribute, absolute
+//   ovr:    1                                                               // +1 to Team OVR (0 or 1)
+//   level:  4                                                               // which level these numbers are for
+// Each sub-attribute can be boosted by a different amount, and the numbers are whatever the game shows at your
+// level - so levelling a badge up is just editing the amounts. A badge may also carry a direct main-stat boost
+// via stats:{shooting:2,...}. (Legacy badges using subs:[...] + per_level x level are still understood.)
 const DEFAULT_BADGES = [
-  { name:"Kick Off", subs:["Reactions","Volley","Finishing"], per_level:1, max_level:3 },
+  { name:"Kick Off", boosts:{ Reactions:3, Volley:3, Finishing:3 }, ovr:0, level:3 },
 ];
 const LS_BADGES = "fcm.badges";
 function badgeStore() { try { return JSON.parse(localStorage.getItem(LS_BADGES) || "{}"); } catch (e) { return {}; } }
@@ -335,19 +340,37 @@ function loadBadges() {
 }
 let _badgeDelta = null;
 function invalidateBadges() { _badgeDelta = null; }
-function badgeStatDelta() {
-  if (_badgeDelta) return _badgeDelta;
-  const { active, defs } = loadBadges();
-  const out = {}; MAIN_STATS.forEach((s) => out[s] = 0);
-  active.forEach((a) => {
-    const b = defs[a.name]; if (!b) return;
-    const lvl = Math.max(0, Math.min(b.max_level || 3, Math.round(Number(a.level) || 0)));
+// Fold one badge's sub-attribute boosts into the six headline stats via STAT_WEIGHTS.
+function foldBadge(b, active, out) {
+  if (b.boosts) {                                            // new model: absolute per-sub amounts
+    for (const sub in b.boosts) { const amt = Number(b.boosts[sub]) || 0; if (amt) MAIN_STATS.forEach((s) => { const w = STAT_WEIGHTS[s][sub]; if (w) out[s] += w * amt; }); }
+    if (b.stats) MAIN_STATS.forEach((s) => { if (b.stats[s]) out[s] += Number(b.stats[s]) || 0; });
+  } else {                                                   // legacy model: subs[] x per_level x active level
+    const lvl = Math.max(0, Math.min(b.max_level || 3, Math.round(Number(active && active.level) || 0)));
     if (!lvl) return;
     const per = b.per_level || 1;
     (b.subs || []).forEach((sub) => MAIN_STATS.forEach((s) => { const w = STAT_WEIGHTS[s][sub]; if (w) out[s] += w * per * lvl; }));
     if (b.stats) MAIN_STATS.forEach((s) => { if (b.stats[s]) out[s] += Number(b.stats[s]) * lvl; });
-  });
+  }
+}
+function badgeStatDelta() {
+  if (_badgeDelta) return _badgeDelta;
+  const { active, defs } = loadBadges();
+  const out = {}; MAIN_STATS.forEach((s) => out[s] = 0);
+  active.forEach((a) => { const b = defs[a.name]; if (b) foldBadge(b, a, out); });
   _badgeDelta = out; return out;
+}
+// Total Team-OVR boost from the active badges (some badges add +1 to Team OVR).
+function badgeOvrDelta() {
+  const { active, defs } = loadBadges();
+  let n = 0; active.forEach((a) => { const b = defs[a.name]; if (b && b.ovr) n += Number(b.ovr) || 0; });
+  return n;
+}
+// Add the badges' Team-OVR boost onto a team-OVR result object (leaves the optimizer's internal maths alone).
+function withBadgeOvr(t) {
+  const b = badgeOvrDelta();
+  if (t && typeof t.team_ovr === "number" && b) { t.team_ovr += b; t.badge_ovr = b; }
+  return t;
 }
 function saveBadges(active, custom) {
   const d = badgeStore();
@@ -978,11 +1001,11 @@ window.API = {
     let use = states;
     if (potential) { out.current_best_total = r3(bestSquadScore(states)); use = states.map(potentialState); }
     out.results = optimize(use, top || 5);
-    out.team_ovr = teamOvrOf(states);                                      // your actual squad — matches the game
-    out.team_ovr_best = bestTeamOvr(states);                               // best possible (leave weak sub slots empty)
-    out.team_ovr_potential = teamOvrOf(states.map(fullyRankedUp));         // if every card were fully ranked up
+    out.team_ovr = withBadgeOvr(teamOvrOf(states));                        // your actual squad — matches the game (+ badge OVR)
+    out.team_ovr_best = withBadgeOvr(bestTeamOvr(states));                 // best possible (leave weak sub slots empty)
+    out.team_ovr_potential = withBadgeOvr(teamOvrOf(states.map(fullyRankedUp))); // if every card were fully ranked up
     return A(out); },
-  teamOvr() { const states = statesFromStore(); return A(bestTeamOvr(states)); },
+  teamOvr() { const states = statesFromStore(); return A(withBadgeOvr(bestTeamOvr(states))); },
   xpInfo() { return A({ per_level: XP_PER_LEVEL, total_to_max: xpToReach(30),
     cumulative: (function(){ const o={}; for (let l=1;l<=30;l++) o[l]=xpToReach(l); return o; })(),
     yield_bands: XP_YIELD_BANDS }); },
@@ -1109,6 +1132,7 @@ window.API.setActiveBadges = (active) => { saveBadges(active, null); return A({ 
 window.API.addCustomBadge = (badge) => { const d = badgeStore(); const custom = (d.custom || []).filter((b) => b.name !== badge.name); custom.push(badge); saveBadges(null, custom); return A({ ok:true }); };
 window.API.removeCustomBadge = (name) => { const d = badgeStore(); const custom = (d.custom || []).filter((b) => b.name !== name); const active = (d.active || []).filter((a) => a.name !== name); saveBadges(active, custom); return A({ ok:true }); };
 window.API.badgeDelta = () => A(badgeStatDelta());
+window.API.badgeOvr = () => A(badgeOvrDelta());
 window.API.subAttrsByStat = () => A(SUBATTRS_BY_STAT);
 
 // expose a few internals for optional Node cross-testing

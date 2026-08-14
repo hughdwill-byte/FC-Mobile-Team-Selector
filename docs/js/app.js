@@ -160,52 +160,71 @@ function badgesPanelHtml() {
   const slots = [0, 1, 2].map((i) => {
     const a = (State.badgeSlots && State.badgeSlots[i]) || { name: "", level: 0 };
     const opts = `<option value="">— empty —</option>` + names.map((n) => `<option value="${esc(n)}" ${a.name === n ? "selected" : ""}>${esc(n)}</option>`).join("");
-    const maxL = a.name && defs[a.name] ? (defs[a.name].max_level || 3) : 5;
+    const b = a.name ? defs[a.name] : null;
+    const legacy = b && !b.boosts && b.per_level;
+    const ctl = legacy
+      ? `<input class="badge-level" data-i="${i}" type="number" min="0" max="${b.max_level || 3}" value="${a.level || 0}" title="Level (max ${b.max_level || 3})"/>`
+      : `<span class="badge-eff hint">${b ? badgeEffLabel(b) : ""}</span>`;
     return `<div class="badge-slot">
       <select class="badge-name" data-i="${i}">${opts}</select>
-      <input class="badge-level" data-i="${i}" type="number" min="0" max="${maxL}" value="${a.level || 0}" ${a.name ? "" : "disabled"} title="Level (max ${maxL})"/>
+      ${ctl}
     </div>`;
   }).join("");
   const d = State.badgeDelta || {};
   const nz = State.meta.main_stats.filter((s) => Math.abs(d[s] || 0) >= 0.05);
   const bonus = nz.length ? nz.map((s) => `+${(d[s]).toFixed(1)} ${STAT_ABBR[s]}`).join(" · ") : "none active";
+  const bovr = (State.badgeSlots || []).reduce((n, a) => n + (a && defs[a.name] && defs[a.name].ovr ? Number(defs[a.name].ovr) : 0), 0);
   return `<div class="panel" style="border-color:#3a2a52">
     <h3>Team badges <span class="hint">up to 3 · boost the whole squad</span></h3>
     <div class="badge-slots">${slots}</div>
-    <div class="hint" style="margin-top:6px">Team-wide bonus: <b>${bonus}</b>. Badges add flat sub-attribute boosts to every player (folded into the six stats), and factor into the Best XI scoring.</div>
-    <details style="margin-top:6px"><summary class="hint" style="cursor:pointer">Add a badge</summary>
+    <div class="hint" style="margin-top:6px">Team-wide bonus: <b>${bonus}</b>${bovr ? ` · <b>+${bovr} Team OVR</b>` : ""}. Badges add sub-attribute boosts to every player (folded into the six stats) and factor into the Best XI scoring.</div>
+    <details style="margin-top:6px"><summary class="hint" style="cursor:pointer">Add / edit a badge</summary>
       <div class="badge-add">
         <input id="bg-name" placeholder="Name (e.g. Winter Wildcard)" />
         <select id="bg-sub-pick">${badgeSubOptions()}</select>
-        <input id="bg-per" type="number" min="1" placeholder="per level" style="max-width:110px" />
-        <input id="bg-max" type="number" min="1" placeholder="max level" style="max-width:110px" />
-        <button id="bg-add" class="btn small primary">Add badge</button>
+        <input id="bg-ovr" type="number" min="0" max="1" placeholder="+OVR" title="Team OVR boost (0 or 1)" style="max-width:80px" />
+        <input id="bg-level" type="number" min="1" placeholder="level" title="Which level these numbers are for" style="max-width:80px" />
+        <button id="bg-add" class="btn small primary">Save badge</button>
       </div>
       <div id="bg-sub-chips" class="badge-sub-chips" style="margin-top:6px">${badgeSubChips()}</div>
-      <div class="hint" style="margin-top:4px">Pick each sub-attribute the badge boosts from the dropdown (grouped by stat). The effect on the six stats is worked out for you.</div>
+      <div class="hint" style="margin-top:4px">Add each sub-attribute the badge boosts and type the exact amount the game shows at your level (each can differ, e.g. Balance +12, Aggression +10). Set <b>+OVR</b> to 1 if the badge raises Team OVR. Re-saving with the same name updates it.</div>
     </details>
   </div>`;
+}
+// Compact one-line effect label for a badge slot: its OVR boost and the sub-attributes it lifts.
+function badgeEffLabel(b) {
+  const parts = [];
+  if (b.ovr) parts.push(`+${b.ovr} OVR`);
+  if (b.boosts) { const subs = Object.keys(b.boosts); if (subs.length) parts.push(subs.map((s) => `${s.split(" ").map((w) => w[0]).join("")}+${b.boosts[s]}`).join(" ")); }
+  return parts.join(" · ") || (b.level ? `lvl ${b.level}` : "");
 }
 function badgeSubOptions() {
   const byStat = State.subAttrs || {};
   const picked = State._badgeSubs || [];
   return `<option value="">+ add sub-attribute…</option>` + State.meta.main_stats.map((s) => {
-    const subs = (byStat[s] || []).filter((x) => picked.indexOf(x) < 0);
+    const subs = (byStat[s] || []).filter((x) => !picked.some((p) => p.sub === x));
     return subs.length ? `<optgroup label="${STAT_ABBR[s]}">${subs.map((x) => `<option value="${esc(x)}">${esc(x)}</option>`).join("")}</optgroup>` : "";
   }).join("");
 }
 function badgeSubChips() {
   const picked = State._badgeSubs || [];
-  return picked.length ? picked.map((x) => `<span class="chip bsub" data-sub="${esc(x)}">${esc(x)} ✕</span>`).join("") : `<span class="hint">no sub-attributes selected yet</span>`;
+  if (!picked.length) return `<span class="hint">no sub-attributes selected yet</span>`;
+  return picked.map((p) => `<span class="chip bsub" data-sub="${esc(p.sub)}">${esc(p.sub)}
+    <input class="bsub-amt" data-sub="${esc(p.sub)}" type="number" min="0" value="${p.amt}" title="amount at your level" style="width:52px;margin:0 4px" />
+    <span class="bsub-x" data-sub="${esc(p.sub)}" style="cursor:pointer" title="remove">✕</span></span>`).join("");
 }
 function refreshBadgeSubUI() {
   const pick = $("#bg-sub-pick"), chips = $("#bg-sub-chips");
   if (pick) pick.innerHTML = badgeSubOptions();
   if (chips) {
     chips.innerHTML = badgeSubChips();
-    $$("#bg-sub-chips .bsub").forEach((c) => (c.onclick = () => {
-      State._badgeSubs = (State._badgeSubs || []).filter((x) => x !== c.dataset.sub);
+    $$("#bg-sub-chips .bsub-x").forEach((c) => (c.onclick = () => {
+      State._badgeSubs = (State._badgeSubs || []).filter((p) => p.sub !== c.dataset.sub);
       refreshBadgeSubUI();
+    }));
+    $$("#bg-sub-chips .bsub-amt").forEach((inp) => (inp.oninput = () => {
+      const p = (State._badgeSubs || []).find((x) => x.sub === inp.dataset.sub);
+      if (p) p.amt = Math.max(0, Number(inp.value) || 0);   // keep amount without a full re-render (don't lose focus)
     }));
   }
 }
@@ -276,7 +295,7 @@ async function renderSquad(app) {
       <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">
         <div><div class="hint">Team OVR</div><div style="font-size:32px;font-weight:800;line-height:1">${to.team_ovr}</div></div>
         <div class="hint" style="flex:1 1 240px">
-          <b>${to.base_ovr_component}</b> (avg base OVR ${to.avg_base_ovr.toFixed(1)}) + <b>${to.rank_component}</b> (avg rank ${to.avg_rank.toFixed(2)}) over your <b>${to.size}</b> players — matches the in-game number.
+          <b>${to.base_ovr_component}</b> (avg base OVR ${to.avg_base_ovr.toFixed(1)}) + <b>${to.rank_component}</b> (avg rank ${to.avg_rank.toFixed(2)})${to.badge_ovr ? ` + <b>${to.badge_ovr}</b> (team badge)` : ""} over your <b>${to.size}</b> players — matches the in-game number.
           ${best && best.team_ovr > to.team_ovr ? `<br>Best possible: <b class="gain-pos">${best.team_ovr}</b> by fielding your top <b>${best.squad_size}</b> and leaving weak sub slots empty.` : ""}
           ${top && top.team_ovr > to.team_ovr ? `<br>Ranking everyone up reaches <b class="gain-pos">${top.team_ovr}</b>.` : ""}
           <br><span class="hint">Team OVR uses only <b>base OVR + rank</b> — training and skill points don't affect it.</span>
@@ -328,19 +347,22 @@ async function renderSquad(app) {
   }));
   const subPick = $("#bg-sub-pick");
   if (subPick) subPick.onchange = () => {
-    if (subPick.value) { State._badgeSubs = [...(State._badgeSubs || []), subPick.value]; refreshBadgeSubUI(); }
+    if (subPick.value && !(State._badgeSubs || []).some((p) => p.sub === subPick.value)) {
+      State._badgeSubs = [...(State._badgeSubs || []), { sub: subPick.value, amt: 1 }]; refreshBadgeSubUI();
+    }
   };
-  refreshBadgeSubUI();   // wire chip removal for any already-selected subs
+  refreshBadgeSubUI();   // wire chip amount/removal for any already-selected subs
   const addBtn = $("#bg-add");
   if (addBtn) addBtn.onclick = async () => {
     const name = ($("#bg-name").value || "").trim();
-    const subs = (State._badgeSubs || []).slice();
-    const per = Math.max(1, Number($("#bg-per").value) || 1);
-    const max = Math.max(1, Number($("#bg-max").value) || 3);
-    if (!name || !subs.length) return toast("Enter a name and pick at least one sub-attribute", true);
-    await API.addCustomBadge({ name, subs, per_level: per, max_level: max });
+    const picks = (State._badgeSubs || []).filter((p) => p.amt > 0);
+    const ovr = Math.max(0, Math.min(1, Math.round(Number($("#bg-ovr").value) || 0)));
+    const level = Math.max(1, Math.round(Number($("#bg-level").value) || 1));
+    if (!name || (!picks.length && !ovr)) return toast("Enter a name and at least one sub-attribute amount (or a Team OVR boost)", true);
+    const boosts = {}; picks.forEach((p) => boosts[p.sub] = p.amt);
+    await API.addCustomBadge({ name, boosts, ovr, level });
     State._badgeSubs = [];
-    toast(`Added badge "${name}"`);
+    toast(`Saved badge "${name}"`);
     render();
   };
 }
