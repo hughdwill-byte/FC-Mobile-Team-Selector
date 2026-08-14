@@ -291,11 +291,18 @@ function playerToState(p) {
   if (p.growth_override) for (const k in p.growth_override) if (p.growth_override[k] != null) growth[k] = p.growth_override[k];
   const stats = {}; MAIN_STATS.forEach((s) => stats[s] = Number(p[s]) || 0);
   const base = {}; if (p.base_stats) MAIN_STATS.forEach((s) => { if (p.base_stats[s] != null) base[s] = Number(p.base_stats[s]); });
+  const rank = Number(p.rank) || 0;
+  const maxR = (loadRule("rankup").max_rank || 5);
+  const rankup = (p.rankup_positions || []).slice();
+  // A fully ranked-up card (max rank) has actually unlocked its rank-up positions, so fold them into its
+  // playable positions — the optimiser can now field it there for real, not just in the Potential XI.
+  const positions = (p.positions || []).slice();
+  if (rank >= maxR) rankup.forEach((pos) => { if (positions.indexOf(pos) < 0) positions.push(pos); });
   return {
-    id: p.id, name: p.name, ovr: Number(p.ovr) || 0, rank: Number(p.rank) || 0,
+    id: p.id, name: p.name, ovr: Number(p.ovr) || 0, rank,
     base_ovr: p.base_ovr != null ? Number(p.base_ovr) : null,
     training_level: Number(p.training_level) || 0, stats,
-    positions: (p.positions || []).slice(), rankup_positions: (p.rankup_positions || []).slice(),
+    positions, rankup_positions: rankup,
     playstyles: (p.playstyles || []).map((x) => Object.assign({}, x)), growth,
     growth_override: p.growth_override || null,
     skill_points: Number(p.skill_points) || 0, base_stats: base,
@@ -412,7 +419,10 @@ function slotScore(state, position) {
   const gkp = pr.gk_mismatch_penalty != null ? pr.gk_mismatch_penalty : 0.05;
   const ow = ovrWeight();
   if (position === "GK") {
-    if (!isGk(state)) return state.ovr * gkp;
+    // A real keeper is always vastly preferred. If the squad has NO keeper, someone must fill in goal —
+    // rank the emergency fillers by keeper suitability (gkRating leans on defending/positioning) so a
+    // centre-back is chosen over a striker, instead of picking whoever has the highest OVR.
+    if (!isGk(state)) return gkp * (ow * state.ovr + (1 - ow) * gkRating(state));
     return ow * state.ovr + (1 - ow) * gkRating(state);
   }
   let factor;
@@ -484,13 +494,22 @@ function skillBoostPct(positions, level) {
 // Player-choice skills (picked at max rank), effect on the six stats per level (each level = +20 to its
 // sub-attributes). Applied on top of the forced-skill delta when the user says they chose them.
 const CHOICE_DELTAS = {
+  // Outfield player-choice skills (GK slots = pace,shooting,passing,dribbling,defending,physical).
   SCORING:   [0, 15, 0, 0, 3, 0],
   PASSING:   [0, 0, 17, 0, 0, 0],
   DRIBBLING: [0, 0, 0, 18, 0, 0],
   DEFENDING: [0, 0, 0, 0, 17, 0],
   PHYSICAL:  [0, 0, 0, 2, 0, 20],
+  // Goalkeeper player-choice skills, folded through the keeper weight table (GK slots: pace=Diving,
+  // shooting=Handling, passing=Kicking, dribbling=Reflexes, defending=Positioning, physical).
+  GK_KICKING: [0, 0, 23, 0, 0, 0],   // GK KICKING -> Kicking
+  GK_RUSH:    [20, 0, 0, 0, 0, 3],   // GK RUSH -> Diving (+ a little physical)
+  HIGHBALLS:  [0, 20, 0, 0, 20, 7],  // HIGHBALLS -> Handling + Positioning
 };
-const CHOICE_SKILLS = Object.keys(CHOICE_DELTAS);
+const CHOICE_LABELS = { GK_KICKING:"GK Kicking", GK_RUSH:"GK Rush", HIGHBALLS:"Highballs" };
+const CHOICE_SKILLS = ["SCORING", "PASSING", "DRIBBLING", "DEFENDING", "PHYSICAL"];  // outfield
+const CHOICE_SKILLS_GK = ["GK_KICKING", "GK_RUSH", "HIGHBALLS"];
+const choiceSkillsFor = (isGk) => (isGk ? CHOICE_SKILLS_GK : CHOICE_SKILLS);
 // Sum the chosen skills' deltas: skillChoices is { SCORING: level, ... }.
 function choiceDelta(skillChoices) {
   const out = [0, 0, 0, 0, 0, 0];
@@ -500,11 +519,14 @@ function choiceDelta(skillChoices) {
   }
   return out;
 }
+const choiceLevelsUsed = (skillChoices) => { let n = 0; if (skillChoices) for (const k in skillChoices) n += Math.max(0, Number(skillChoices[k]) || 0); return n; };
 
-// How many player-choice (all-caps) skills a card can pick: skills fill in order as it ranks up (one per
-// rank), the mandatory forced skills first, so the choices only open up once all forced skills are done.
-function choiceSlots(rank, numForced) {
-  return Math.max(0, (Math.round(Number(rank) || 0)) - (Number(numForced) || 0));
+// A card gets one skill slot per rank (rank R = R slots). Those slots are shared: the levels you put into
+// player-choice skills use slots first, and any remaining slots fill the card's mandatory (forced) skills
+// in order. So choices are ALWAYS selectable up to your rank — a card with five forced skills no longer
+// locks you out. This returns how many choice levels are still free to spend at the given rank.
+function choiceSlots(rank, numForced, choiceUsed) {
+  return Math.max(0, Math.round(Number(rank) || 0) - (Number(choiceUsed) || 0));
 }
 // The position-shaped per-stat training growth vector (total gain from level 0 to max), or null if the
 // position is unknown / no table is configured. positions is the player's position list; the first entry
@@ -529,28 +551,32 @@ function trainGrowth(positions, level) {
   return [tb, tb, tb, tb, tb, tb];
 }
 // current = base + training + skills; rank also raises OVR.
-// skillForced is the card's ordered list of forced-skill six-stat deltas; rank applies the first `rank`
-// of them (mandatory, in order). Player-choice skills add on top once all forced are done. positions
-// selects the position-shaped training-growth profile (training raises each stat by a different amount).
-function deriveCurrent(base, baseOvr, level, rank, skillForced, skillChoices, positions) {
+// A card has `rank` skill slots. The player-choice skills you pick use slots first; whatever slots remain
+// fill the card's mandatory (forced) skills in order. So forced_applied = rank - choiceLevels (clamped),
+// and choices are always selectable up to your rank. positions selects the position-shaped training curve
+// AND (for badge folding elsewhere) is unrelated here. badgeDelta, if passed, is added on top for display.
+function deriveCurrent(base, baseOvr, level, rank, skillForced, skillChoices, positions, badgeDelta) {
   const g = loadRule("growth");
   const lvl = Math.max(0, Math.min(g.max_training_level || 30, Math.round(Number(level) || 0)));
   const tg = trainGrowth(positions, lvl);                    // per-stat training gain (position-shaped)
   const ru = loadRule("rankup"); const maxR = ru.max_rank || 5;
   const rk = Math.max(0, Math.min(maxR, Math.round(Number(rank) || 0)));
   const fsd = Array.isArray(skillForced) ? skillForced : null;
+  const used = choiceLevelsUsed(skillChoices);               // slots spent on player choices
+  const forcedApplied = fsd ? Math.max(0, Math.min(fsd.length, rk - used)) : 0;  // remaining slots fill forced, in order
   const fd = [0, 0, 0, 0, 0, 0];
-  if (fsd) { const applied = Math.min(fsd.length, rk); for (let i = 0; i < applied; i++) for (let j = 0; j < 6; j++) fd[j] += Number(fsd[i][j]) || 0; }
-  const ch = choiceDelta(skillChoices);                      // player-picked skills (once forced are done)
+  for (let i = 0; i < forcedApplied; i++) for (let j = 0; j < 6; j++) fd[j] += Number(fsd[i][j]) || 0;
+  const ch = choiceDelta(skillChoices);                      // player-picked skills
+  const bd = badgeDelta || null;                             // optional team-badge boost (display only)
   const stats = {};
   MAIN_STATS.forEach((s, i) => {
     const b = Number((base || {})[s]);
-    stats[s] = isNaN(b) ? null : Math.floor(b + tg[i] + fd[i] + ch[i]);
+    stats[s] = isNaN(b) ? null : Math.floor(b + tg[i] + fd[i] + ch[i]) + (bd ? Math.round(Number(bd[s]) || 0) : 0);
   });
   let ovr = Number(baseOvr);                                  // rank raises OVR only (not flat stats)
   if (!isNaN(ovr)) { const og = ru.ovr_gain || []; for (let r = 0; r < rk; r++) ovr += (r < og.length ? og[r] : 1); }
   else ovr = null;
-  return { stats, ovr, forced_applied: fsd ? Math.min(fsd.length, rk) : 0, choice_slots: choiceSlots(rk, fsd ? fsd.length : 0) };
+  return { stats, ovr, forced_applied: forcedApplied, choice_slots: choiceSlots(rk, fsd ? fsd.length : 0, used) };
 }
 
 // ----------------------------------------------------------------- Team OVR (FC Mobile roster metric)
@@ -732,6 +758,7 @@ function playerOut(p) {
   out.effective_stats = {}; MAIN_STATS.forEach((s) => out.effective_stats[s] = Math.round(eff[s] * 10) / 10);
   out.base_stats = p.base_stats || null; out.base_ovr = p.base_ovr != null ? p.base_ovr : null;
   out.positions = p.positions || []; out.rankup_positions = p.rankup_positions || [];
+  out.effective_positions = st.positions;   // includes rank-up unlocks once the card is at max rank
   out.playstyles = p.playstyles || []; out.growth_override = p.growth_override || null;
   out.skill_points = p.skill_points; out.notes = p.notes || ""; out.variant = p.variant || "";
   out.best_position = bp; out.best_score = Math.round(bs * 100) / 100;
@@ -1139,5 +1166,5 @@ window.API.subAttrsByStat = () => A(SUBATTRS_BY_STAT);
 window.__engine = { optimize, planUpgrades, planTrainingBudget, takeoverPlan, statesFromStore, bestSquadScore, potentialState,
   bestTeamOvr, teamOvrOf, trainStep, withTrainingLevel, xpToReach, foodXp, skillMainStats, deriveCurrent };
 // Synchronous helper for the editor's live "auto-calc current stats" fields.
-window.StatCalc = { deriveCurrent, choiceSlots, CHOICE_SKILLS, CHOICE_DELTAS };
+window.StatCalc = { deriveCurrent, choiceSlots, CHOICE_SKILLS, CHOICE_SKILLS_GK, CHOICE_LABELS, CHOICE_DELTAS, choiceSkillsFor };
 })();

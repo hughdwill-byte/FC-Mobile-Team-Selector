@@ -50,13 +50,15 @@ def _skill_head_delta(entry, weights):
     return [round(sum(weights.get(head, {}).get(s, 0) * b for s, b in boosts.items())) for head in MAIN6]
 
 
-def forced_skill_deltas(path_str, fx):
+def forced_skill_deltas(path_str, fx, is_gk=False):
     """Ordered list of the FORCED (non-caps) skills' six-stat deltas, in path order. Skills are applied in
     order as a card ranks up (one per rank), forced ones first, so the engine applies the first `rank` of
-    these. ALL-CAPS entries are the player's manual choice and are excluded. Returns a list of [6] or None."""
+    these. ALL-CAPS entries are the player's manual choice and are excluded. Returns a list of [6] or None.
+    Goalkeepers fold their skills through the keeper weight table (GK sub-attributes -> the six GK stats)."""
     if not path_str or not fx:
         return None
-    skills, aliases, weights = fx["skills"], fx.get("aliases", {}), fx["weights"]
+    skills, aliases = fx["skills"], fx.get("aliases", {})
+    weights = fx.get("weights_gk", fx["weights"]) if is_gk else fx["weights"]
     out = []
     for part in str(path_str).split(">"):
         p = part.strip()
@@ -162,10 +164,9 @@ def build(xlsx: Path) -> dict:
         ps = playstyles(row)
         if ps:
             card["ps"] = ps               # [[name, level], ...]
-        if not is_gk:                     # skill deltas: outfield only (GK formula differs)
-            fsd = forced_skill_deltas(row.get("skill_boost_path"), fx)
-            if fsd:
-                card["fsd"] = fsd         # ordered forced-skill six-stat deltas (apply first `rank`)
+        fsd = forced_skill_deltas(row.get("skill_boost_path"), fx, is_gk)  # keeper cards fold via GK weights
+        if fsd:
+            card["fsd"] = fsd             # ordered forced-skill six-stat deltas (apply first `rank`)
         cards.append(card)
     # newest/highest first is nice for ties; keep sheet order otherwise
     return {

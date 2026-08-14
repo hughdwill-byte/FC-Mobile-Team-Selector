@@ -45,6 +45,31 @@
    "Stamina": 0.0
   }
  },
+ "weights_gk": {
+  "PAC": {
+   "GK Diving": 1.0
+  },
+  "SHO": {
+   "GK Handling": 1.0
+  },
+  "PAS": {
+   "GK Kicking": 1.0,
+   "Long Passing": 0.15
+  },
+  "DRI": {
+   "GK Reflexes": 1.0
+  },
+  "DEF": {
+   "GK Positioning": 1.0
+  },
+  "PHY": {
+   "Strength": 0.4,
+   "Reactions": 0.25,
+   "Agility": 0.15,
+   "Sprint Speed": 0.15,
+   "Jumping": 0.1
+  }
+ },
  "skills": {
   "Advance Forward": {
    "type": "Role",

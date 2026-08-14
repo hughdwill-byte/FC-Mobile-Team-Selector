@@ -418,7 +418,7 @@ function renderPlayers(app) {
   const body = rows.map((p) => `<tr class="clickable" data-id="${p.id}">
     <td><button class="icard" data-card="${p.id}" title="View / download card">🎴</button> <b>${esc(p.name)}</b> ${(p.playstyles || []).map((s) => `<span class="chip ps">${esc(s.name)}${s.plus ? "+" : ""}</span>`).join("")}</td>
     <td class="num rating ${ratingClass(p.ovr)}">${p.ovr}</td>
-    <td>${(p.positions || []).map((x) => `<span class="chip pos">${esc(x)}</span>`).join("") || "<span class='hint'>none</span>"}</td>
+    <td>${(p.effective_positions || p.positions || []).map((x) => { const unlocked = !(p.positions || []).includes(x); return `<span class="chip pos${unlocked ? " unlocked" : ""}"${unlocked ? ' title="unlocked at max rank"' : ""}>${esc(x)}${unlocked ? "★" : ""}</span>`; }).join("") || "<span class='hint'>none</span>"}</td>
     ${sc(p, "pace")}${sc(p, "shooting")}${sc(p, "passing")}${sc(p, "dribbling")}${sc(p, "defending")}${sc(p, "physical")}
     <td><span class="chip pos">${esc(p.best_position)}</span></td>
     <td class="num rating ${ratingClass(p.best_score)}">${p.best_score.toFixed(1)}</td>
@@ -475,12 +475,15 @@ function buildEditorForm() {
   const val = (v) => (v === "" || v === null || v === undefined ? "" : v);
   const hasBase = !!(p.base_stats && stats.some((s) => p.base_stats[s] != null));
   const autoOn = hasBase && p._autoCurrent !== false;   // auto-fill current stats from base + training/rank/skills
-  const choiceSkills = (window.StatCalc && StatCalc.CHOICE_SKILLS) || [];
+  const choiceSkills = (window.StatCalc && StatCalc.choiceSkillsFor) ? StatCalc.choiceSkillsFor(isGk) : ((window.StatCalc && StatCalc.CHOICE_SKILLS) || []);
+  const choiceLabel = (c) => (StatCalc.CHOICE_LABELS && StatCalc.CHOICE_LABELS[c]) || (c.charAt(0) + c.slice(1).toLowerCase());
   const titleCase = (s) => s.charAt(0) + s.slice(1).toLowerCase();
+  const badgesActive = stats.some((s) => Math.abs((State.badgeDelta || {})[s] || 0) >= 0.05);
   const numForced = (p.skill_forced || []).length;                       // mandatory skills on this card
   const rankNow = Math.max(0, Math.round(Number(p.rank) || 0));
-  const forcedApplied = Math.min(numForced, rankNow);
-  const choiceSlotsAvail = window.StatCalc ? StatCalc.choiceSlots(rankNow, numForced) : 0;
+  const choiceUsed = Object.values(p.skill_choices || {}).reduce((n, v) => n + (Math.max(0, Number(v) || 0)), 0);
+  const forcedApplied = Math.max(0, Math.min(numForced, rankNow - choiceUsed));
+  const choiceSlotsAvail = window.StatCalc ? StatCalc.choiceSlots(rankNow, numForced, choiceUsed) : 0;
   const posChips = State.meta.positions.map((code) =>
     `<span class="chip pos ${p.positions.includes(code) ? "" : "off"}" data-pos="${code}"
       style="cursor:pointer;${p.positions.includes(code) ? "" : "opacity:.35"}">${code}</span>`).join(" ");
@@ -519,20 +522,19 @@ function buildEditorForm() {
       <div class="statgrid">
         ${stats.map((s) => `<div class="field" style="margin:0"><label>${statLabel(s, isGk)}</label><input id="f-${s}" type="number" value="${val(p[s])}" placeholder="—" ${autoOn ? "readonly" : ""} /></div>`).join("")}
       </div>
-      ${autoOn ? `<div class="hint" style="margin-top:6px">Auto-filled from <b>base + training + skills</b> (rank raises OVR and fills the card's mandatory skills in order${numForced ? ` — ${forcedApplied} of ${numForced} applied at rank ${rankNow}` : " — no skill data for this card"}). Untick to edit by hand.</div>` : ""}
-      <div id="badge-preview"></div>
+      ${autoOn ? `<div class="hint" style="margin-top:6px">Auto-filled from <b>base + training + skills</b>${badgesActive ? ` <b style="color:var(--accent,#3ddc97)">(incl. active team badges)</b>` : ""}. Rank fills the card's mandatory skills in order${numForced ? ` — ${forcedApplied} of ${numForced} applied at rank ${rankNow}${choiceUsed ? ` (${choiceUsed} slot${choiceUsed === 1 ? "" : "s"} spent on choices)` : ""}` : ""}. Untick to edit by hand.</div>` : ""}
     </div>
-    ${(autoOn && !isGk && choiceSkills.length && numForced) ? (choiceSlotsAvail > 0 ? `
-    <div class="field"><label>Chosen skills — ${choiceSlotsAvail} available at rank ${rankNow}</label>
-      <div class="hint" style="margin-bottom:6px">All ${numForced} mandatory skills are done. Pick which capitalised skills you leveled and how much (roughly ${choiceSlotsAvail} level${choiceSlotsAvail === 1 ? "" : "s"} to spread across them).</div>
+    ${(autoOn && choiceSkills.length) ? (rankNow > 0 ? `
+    <div class="field"><label>Chosen skills — ${choiceSlotsAvail} of ${rankNow} slot${rankNow === 1 ? "" : "s"} free</label>
+      <div class="hint" style="margin-bottom:6px">A rank-${rankNow} card has ${rankNow} skill slot${rankNow === 1 ? "" : "s"}. Levels you put into these player-choice skills use slots first; any left over fill the ${numForced} mandatory skill${numForced === 1 ? "" : "s"} in order.</div>
       <div class="statgrid">
-        ${choiceSkills.map((c) => `<div class="field" style="margin:0"><label>${titleCase(c)}</label>
+        ${choiceSkills.map((c) => `<div class="field" style="margin:0"><label>${choiceLabel(c)}</label>
           <input id="sc-${c}" type="number" min="0" placeholder="0"
             value="${p.skill_choices && p.skill_choices[c] ? p.skill_choices[c] : ""}" /></div>`).join("")}
       </div>
     </div>` : `
     <div class="field"><label>Chosen skills</label>
-      <div class="hint">Locked — the ${numForced} mandatory skills fill first. Player-choice skills open at rank ${numForced} (this card is rank ${rankNow}).</div>
+      <div class="hint">Rank this card up to unlock skill slots — a rank-N card can pick N skill levels (this card is rank 0).</div>
     </div>`) : ""}
     <div class="field"><label>Positions (click to toggle)</label><div id="pos-chips">${posChips}</div></div>
     <div class="field"><label>Unlocks on next rank up (optional)</label>
@@ -624,42 +626,33 @@ function buildEditorForm() {
     };
   }
 
-  // Auto-calc current stats/OVR from base + training level + rank + skill points.
+  // Auto-calc current stats/OVR from base + training level + rank + skill points. The SHOWN numbers include
+  // any active team badges (so they match the in-game screen); the card-only value is kept in each field's
+  // data-cardonly attribute so collectEditor stores card-only and the squad page adds badges exactly once.
   function recalcCurrent() {
     const g = (id) => document.getElementById(id);
     if (!g("f-pace") || !window.StatCalc) return;
     const base = {};
     stats.forEach((s) => { const v = g("b-" + s).value.trim(); base[s] = v === "" ? null : Number(v); });
     const baseOvr = State.editing.base_ovr != null ? State.editing.base_ovr : null;
-    // Player-choice skills the user picked at max rank.
+    // Player-choice skills the user picked (GK cards use the keeper choices).
     const choices = {};
-    (StatCalc.CHOICE_SKILLS || []).forEach((c) => { const el = g("sc-" + c); if (el) { const v = Number(el.value) || 0; if (v > 0) choices[c] = v; } });
+    (choiceSkills || []).forEach((c) => { const el = g("sc-" + c); if (el) { const v = Number(el.value) || 0; if (v > 0) choices[c] = v; } });
     State.editing.skill_choices = Object.keys(choices).length ? choices : null;
-    // Current = base + training + forced-skill delta (rank-scaled) + chosen skills; rank also raises OVR.
-    const res = StatCalc.deriveCurrent(base, baseOvr, g("f-training_level").value, g("f-rank").value, State.editing.skill_forced, State.editing.skill_choices, State.editing.positions);
-    stats.forEach((s) => { if (res.stats[s] != null) g("f-" + s).value = res.stats[s]; });
-    if (baseOvr != null && res.ovr != null) g("f-ovr").value = res.ovr;
-    updateBadgePreview();
-  }
-  // Read-only preview of the current stats WITH the active team badges folded in — so this panel can be
-  // matched against an in-game screenshot (the game always shows badges). Display only: the stored/current
-  // stats stay card-only, so the squad page still adds badges exactly once.
-  function updateBadgePreview() {
-    const host = document.getElementById("badge-preview"); if (!host) return;
     const bd = State.badgeDelta || {};
-    const active = stats.some((s) => Math.abs(bd[s] || 0) >= 0.05);
-    if (!active) { host.innerHTML = ""; return; }
-    const g = (id) => document.getElementById(id);
-    const cells = stats.map((s) => {
-      const cur = Number((g("f-" + s) || {}).value) || 0;
-      return `${isGk ? statLabel(s, isGk) : STAT_ABBR[s]} <b>${Math.round(cur + (bd[s] || 0))}</b>`;
+    // card-only (stored) …
+    const cardOnly = StatCalc.deriveCurrent(base, baseOvr, g("f-training_level").value, g("f-rank").value, State.editing.skill_forced, State.editing.skill_choices, State.editing.positions);
+    stats.forEach((s) => {
+      const el = g("f-" + s); if (res_stats_ok(cardOnly, s)) {
+        el.dataset.cardonly = cardOnly.stats[s];
+        el.value = Math.round(cardOnly.stats[s] + (Number(bd[s]) || 0));   // … shown WITH active badges
+      }
     });
-    host.innerHTML = `<div class="hint" style="margin-top:6px;color:var(--accent,#3ddc97)">With active team badges (matches in-game): ${cells.join(" · ")}</div>`;
+    if (baseOvr != null && cardOnly.ovr != null) g("f-ovr").value = cardOnly.ovr;
   }
+  const res_stats_ok = (res, s) => res && res.stats && res.stats[s] != null;
   const autoBox = $("#auto-current");
   if (autoBox) autoBox.onchange = () => { syncEditor(); State.editing._autoCurrent = autoBox.checked; buildEditorForm(); };
-  updateBadgePreview();   // show badge-adjusted line whether or not auto-calc is on
-  stats.forEach((s) => { const el = document.getElementById("f-" + s); if (el) el.addEventListener("input", updateBadgePreview); });
   if (autoOn) {
     recalcCurrent();
     ["f-training_level", "f-rank", "f-skill_points", ...stats.map((s) => "b-" + s), ...choiceSkills.map((c) => "sc-" + c)]
@@ -719,6 +712,9 @@ function collectEditor() {
   const p = State.editing;
   const g = (id) => $("#" + id);
   const num = (id, d = 0) => { const v = parseFloat(g(id).value); return isNaN(v) ? d : v; };
+  // Current stats are stored CARD-ONLY. When auto-calc is on the shown value includes team badges, so read
+  // the card-only value stashed in data-cardonly; otherwise use what's typed (manual entry = card-only).
+  const curStat = (id) => { const el = g(id); if (el && el.dataset && el.dataset.cardonly !== undefined && el.dataset.cardonly !== "") { const v = parseFloat(el.dataset.cardonly); if (!isNaN(v)) return v; } return num(id); };
   const stats = State.meta.main_stats;
   const growth = {};
   let hasGrowth = false;
@@ -734,8 +730,8 @@ function collectEditor() {
   return {
     name: g("f-name").value.trim(),
     ovr: Math.round(num("f-ovr", 0)), rank: Math.round(num("f-rank", 0)), training_level: Math.round(num("f-training_level", 0)),
-    pace: num("f-pace"), shooting: num("f-shooting"), passing: num("f-passing"),
-    dribbling: num("f-dribbling"), defending: num("f-defending"), physical: num("f-physical"),
+    pace: curStat("f-pace"), shooting: curStat("f-shooting"), passing: curStat("f-passing"),
+    dribbling: curStat("f-dribbling"), defending: curStat("f-defending"), physical: curStat("f-physical"),
     positions: p.positions,
     rankup_positions: g("f-rankup_positions").value.split(",").map((x) => x.trim()).filter(Boolean),
     playstyles,
