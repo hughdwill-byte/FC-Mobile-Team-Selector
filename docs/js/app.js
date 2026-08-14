@@ -152,10 +152,45 @@ function layout(slots) {
   return coords;
 }
 
+const STAT_ABBR = { pace:"PAC", shooting:"SHO", passing:"PAS", dribbling:"DRI", defending:"DEF", physical:"PHY" };
+function badgesPanelHtml() {
+  const defs = (State.badges && State.badges.defs) || {};
+  const names = Object.keys(defs);
+  const slots = [0, 1, 2].map((i) => {
+    const a = (State.badgeSlots && State.badgeSlots[i]) || { name: "", level: 0 };
+    const opts = `<option value="">— empty —</option>` + names.map((n) => `<option value="${esc(n)}" ${a.name === n ? "selected" : ""}>${esc(n)}</option>`).join("");
+    const maxL = a.name && defs[a.name] ? (defs[a.name].max_level || 3) : 5;
+    return `<div class="badge-slot">
+      <select class="badge-name" data-i="${i}">${opts}</select>
+      <input class="badge-level" data-i="${i}" type="number" min="0" max="${maxL}" value="${a.level || 0}" ${a.name ? "" : "disabled"} title="Level (max ${maxL})"/>
+    </div>`;
+  }).join("");
+  const d = State.badgeDelta || {};
+  const nz = State.meta.main_stats.filter((s) => Math.abs(d[s] || 0) >= 0.05);
+  const bonus = nz.length ? nz.map((s) => `+${(d[s]).toFixed(1)} ${STAT_ABBR[s]}`).join(" · ") : "none active";
+  return `<div class="panel" style="border-color:#3a2a52">
+    <h3>Team badges <span class="hint">up to 3 · boost the whole squad</span></h3>
+    <div class="badge-slots">${slots}</div>
+    <div class="hint" style="margin-top:6px">Team-wide bonus: <b>${bonus}</b>. Badges add flat sub-attribute boosts to every player (folded into the six stats), and factor into the Best XI scoring.</div>
+    <details style="margin-top:6px"><summary class="hint" style="cursor:pointer">Add a badge</summary>
+      <div class="badge-add">
+        <input id="bg-name" placeholder="Name (e.g. Winter Wildcard)" />
+        <input id="bg-subs" placeholder="Sub-attrs it boosts, comma-separated (e.g. Finishing, Volley, Reactions)" />
+        <input id="bg-per" type="number" min="1" placeholder="per level (e.g. 1)" style="max-width:120px" />
+        <input id="bg-max" type="number" min="1" placeholder="max level (e.g. 3)" style="max-width:120px" />
+        <button id="bg-add" class="btn small primary">Add badge</button>
+      </div>
+      <div class="hint" style="margin-top:4px">Use the sub-attribute names the game shows (Finishing, Sprint Speed, Standing Tackle, …). The effect on the six stats is worked out for you.</div>
+    </details>
+  </div>`;
+}
 async function renderSquad(app) {
   const potential = State._squadMode === "potential";
   State.squad = await API.squad(5, potential);
   if (!State.squad.enough_players) return notEnough(app, State.squad.have);
+  State.badges = await API.getBadges();
+  State.badgeDelta = await API.badgeDelta();
+  State.badgeSlots = [0, 1, 2].map((i) => State.badges.active[i] ? { name: State.badges.active[i].name, level: State.badges.active[i].level } : null);
   const results = State.squad.results;
   const sel = Math.min(State.selectedFormation, results.length - 1);
   const fr = results[sel];
@@ -225,6 +260,7 @@ async function renderSquad(app) {
     <div class="section-title"><h2>${potential ? "Potential XI" : "Best XI"}</h2>${modeToggle}</div>
     <div class="hint" style="margin:-6px 0 12px">Best of ${State.squad.have} players across ${State.meta.formations.length} formations · Hungarian-optimal</div>
     ${teamOvrPanel}
+    ${badgesPanelHtml()}
     ${potentialBanner}
     <div class="pitch-wrap">
       <div class="pitch">
@@ -248,6 +284,32 @@ async function renderSquad(app) {
     const pl = State.players.find((x) => x.id === +b.dataset.card);
     if (pl) openCardModal(pl);
   }));
+
+  // ---- team badges wiring (mutate State.badgeSlots so a re-render can't clobber it) ----
+  const saveBadges = async () => { await API.setActiveBadges((State.badgeSlots || []).filter(Boolean)); render(); };
+  $$(".badge-name").forEach((sel) => (sel.onchange = () => {
+    const i = +sel.dataset.i, name = sel.value, defs = State.badges.defs;
+    const prev = State.badgeSlots[i];
+    State.badgeSlots[i] = name ? { name, level: (prev && prev.name === name && prev.level) ? prev.level : 1 } : null;
+    saveBadges();
+  }));
+  $$(".badge-level").forEach((inp) => (inp.onchange = () => {
+    const i = +inp.dataset.i; if (!State.badgeSlots[i]) return;
+    const maxL = (State.badges.defs[State.badgeSlots[i].name] || {}).max_level || 5;
+    State.badgeSlots[i].level = Math.max(1, Math.min(maxL, Math.round(Number(inp.value) || 1)));
+    saveBadges();
+  }));
+  const addBtn = $("#bg-add");
+  if (addBtn) addBtn.onclick = async () => {
+    const name = ($("#bg-name").value || "").trim();
+    const subs = ($("#bg-subs").value || "").split(",").map((s) => s.trim()).filter(Boolean);
+    const per = Math.max(1, Number($("#bg-per").value) || 1);
+    const max = Math.max(1, Number($("#bg-max").value) || 3);
+    if (!name || !subs.length) return toast("Name and at least one sub-attribute needed", true);
+    await API.addCustomBadge({ name, subs, per_level: per, max_level: max });
+    toast(`Added badge "${name}"`);
+    render();
+  };
 }
 
 // ------------------------------------------------------------------ Card modal (view/download a player's card anywhere)

@@ -281,3 +281,11 @@ input[readonly] { opacity:.75; cursor:not-allowed; background:rgba(255,255,255,.
   color: #fff; letter-spacing: .5px; text-shadow: 0 1px 3px rgba(0,0,0,.85); }
 .card-meta { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .card-meta > b { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* Team badges panel */
+.badge-slots { display: flex; gap: 8px; flex-wrap: wrap; }
+.badge-slot { display: flex; gap: 4px; align-items: center; flex: 1 1 160px; }
+.badge-slot .badge-name { flex: 1 1 auto; min-width: 0; }
+.badge-slot .badge-level { width: 56px; flex: 0 0 auto; }
+.badge-add { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+.badge-add input { flex: 1 1 160px; }

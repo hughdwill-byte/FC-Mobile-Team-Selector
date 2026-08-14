@@ -286,6 +286,54 @@ function copyState(s) {
     growth_override: s.growth_override ? Object.assign({}, s.growth_override) : null,
     skill_points:s.skill_points, base_stats:Object.assign({}, s.base_stats) };
 }
+// ----------------------------------------------------------------- team badges (team-wide stat boosts)
+// Sub-attribute -> six-stat weights (fitted from the dataset), for converting a flat sub-attribute boost
+// (how badges are described in-game, e.g. "Finishing +3") into its effect on the six main stats.
+const STAT_WEIGHTS = {
+  pace:{Acceleration:0.498,"Sprint Speed":0.5},
+  shooting:{Finishing:0.4,"Long Shot":0.06,"Shot Power":0.295,Positioning:0.118,Volley:0.052,Penalties:0.072},
+  passing:{"Short Passing":0.306,"Long Passing":0.243,Vision:0.254,Crossing:0.027,Curve:0.14,"Free Kick":0.024},
+  dribbling:{Dribbling:0.185,Balance:0.096,Agility:0.367,Reactions:0.157,"Ball Control":0.185},
+  defending:{Marking:0.322,"Standing Tackle":0.311,"Sliding Tackle":0.207,Awareness:0.026,Heading:0.132},
+  physical:{Strength:0.45,Aggression:0.3,Jumping:0.25,Stamina:0.0},
+};
+// Known team badges. subs = sub-attributes each level boosts by `per_level`. Seasonal badges can be added
+// by the user; a badge may instead/also carry a direct main-stat boost via `stats:{shooting:2,...}`.
+const DEFAULT_BADGES = [
+  { name:"Kick Off", subs:["Reactions","Volley","Finishing"], per_level:1, max_level:3 },
+];
+const LS_BADGES = "fcm.badges";
+function badgeStore() { try { return JSON.parse(localStorage.getItem(LS_BADGES) || "{}"); } catch (e) { return {}; } }
+function loadBadges() {
+  const d = badgeStore(); const defs = {};
+  DEFAULT_BADGES.concat(d.custom || []).forEach((b) => defs[b.name] = b);
+  return { active: (d.active || []).slice(0, 3), defs };
+}
+let _badgeDelta = null;
+function invalidateBadges() { _badgeDelta = null; }
+function badgeStatDelta() {
+  if (_badgeDelta) return _badgeDelta;
+  const { active, defs } = loadBadges();
+  const out = {}; MAIN_STATS.forEach((s) => out[s] = 0);
+  active.forEach((a) => {
+    const b = defs[a.name]; if (!b) return;
+    const lvl = Math.max(0, Math.min(b.max_level || 3, Math.round(Number(a.level) || 0)));
+    if (!lvl) return;
+    const per = b.per_level || 1;
+    (b.subs || []).forEach((sub) => MAIN_STATS.forEach((s) => { const w = STAT_WEIGHTS[s][sub]; if (w) out[s] += w * per * lvl; }));
+    if (b.stats) MAIN_STATS.forEach((s) => { if (b.stats[s]) out[s] += Number(b.stats[s]) * lvl; });
+  });
+  _badgeDelta = out; return out;
+}
+function saveBadges(active, custom) {
+  const d = badgeStore();
+  localStorage.setItem(LS_BADGES, JSON.stringify({
+    active: (active != null ? active : d.active || []).slice(0, 3),
+    custom: custom != null ? custom : (d.custom || []),
+  }));
+  invalidateBadges();
+}
+
 function effectiveStats(state) {
   const ps = loadRule("playstyles"); const styles = ps.styles || {}; const pm = ps.plus_multiplier || 2.0;
   const out = Object.assign({}, state.stats);
@@ -294,7 +342,8 @@ function effectiveStats(state) {
     const mult = p.plus ? pm : 1.0;
     for (const stat in d) { if (MAIN_STATS.includes(stat) && typeof d[stat] === "number") out[stat] = (out[stat] || 0) + d[stat] * mult; }
   });
-  const r = {}; MAIN_STATS.forEach((s) => r[s] = Math.max(0, out[s] || 0));
+  const bd = badgeStatDelta();                                // team-wide badge boost (applies to every player)
+  const r = {}; MAIN_STATS.forEach((s) => r[s] = Math.max(0, (out[s] || 0) + (bd[s] || 0)));
   return r;
 }
 function normWeights(pos) {
@@ -1003,6 +1052,13 @@ function loadSample(replace) {
 
 window.API.loadSample = (replace) => A(loadSample(replace));
 window.API.clearAll = () => { savePlayers([]); return A({ ok:true }); };
+
+// ----------------------------------------------------------------- team badges API
+window.API.getBadges = () => A(loadBadges());
+window.API.setActiveBadges = (active) => { saveBadges(active, null); return A({ ok:true }); };
+window.API.addCustomBadge = (badge) => { const d = badgeStore(); const custom = (d.custom || []).filter((b) => b.name !== badge.name); custom.push(badge); saveBadges(null, custom); return A({ ok:true }); };
+window.API.removeCustomBadge = (name) => { const d = badgeStore(); const custom = (d.custom || []).filter((b) => b.name !== name); const active = (d.active || []).filter((a) => a.name !== name); saveBadges(active, custom); return A({ ok:true }); };
+window.API.badgeDelta = () => A(badgeStatDelta());
 
 // expose a few internals for optional Node cross-testing
 window.__engine = { optimize, planUpgrades, planTrainingBudget, takeoverPlan, statesFromStore, bestSquadScore, potentialState,
