@@ -294,3 +294,6 @@ input[readonly] { opacity:.75; cursor:not-allowed; background:rgba(255,255,255,.
 .badge-sub-chips { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
 .chip.bsub { cursor: pointer; user-select: none; background: #2a2440; border-color: #4a3a6a; }
 .chip.bsub:hover { background: #3a2f55; }
+
+/* Stat cells boosted by active team badges */
+td.num.badge-boost { color: var(--accent, #3ddc97); font-weight: 700; }

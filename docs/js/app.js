@@ -93,6 +93,7 @@ async function render() {
   const app = $("#app");
   app.innerHTML = "<div class='hint'>Loading…</div>";
   try {
+    State.badgeDelta = await API.badgeDelta();   // active team-badge boost, for display across views
     if (State.view === "squad") return renderSquad(app);
     if (State.view === "players") return renderPlayers(app);
     if (State.view === "upgrades") return renderUpgrades(app);
@@ -386,12 +387,17 @@ function renderPlayers(app) {
     ["best_position", "Best"], ["best_score", "Score"], ["rank", "Rank"], ["training_level", "Lvl"],
   ].map(([k, label]) => `<th class="${["ovr","pace","shooting","passing","dribbling","defending","physical","best_score","rank","training_level"].includes(k) ? "num" : ""}" data-sort="${k}">${label}${State.sort.key === k ? (dir < 0 ? " ▾" : " ▴") : ""}</th>`).join("");
 
+  const bd = State.badgeDelta || {};
+  const badgeCols = State.meta.main_stats.filter((s) => Math.abs(bd[s] || 0) >= 0.05);
+  const sc = (p, k) => {                                  // stat cell, including any active team-badge boost
+    const b = bd[k] || 0, boosted = Math.abs(b) >= 0.05;
+    return `<td class="num${boosted ? " badge-boost" : ""}"${boosted ? ` title="includes +${b.toFixed(1)} from team badges"` : ""}>${Math.round((Number(p[k]) || 0) + b)}</td>`;
+  };
   const body = rows.map((p) => `<tr class="clickable" data-id="${p.id}">
     <td><button class="icard" data-card="${p.id}" title="View / download card">🎴</button> <b>${esc(p.name)}</b> ${(p.playstyles || []).map((s) => `<span class="chip ps">${esc(s.name)}${s.plus ? "+" : ""}</span>`).join("")}</td>
     <td class="num rating ${ratingClass(p.ovr)}">${p.ovr}</td>
     <td>${(p.positions || []).map((x) => `<span class="chip pos">${esc(x)}</span>`).join("") || "<span class='hint'>none</span>"}</td>
-    <td class="num">${p.pace}</td><td class="num">${p.shooting}</td><td class="num">${p.passing}</td>
-    <td class="num">${p.dribbling}</td><td class="num">${p.defending}</td><td class="num">${p.physical}</td>
+    ${sc(p, "pace")}${sc(p, "shooting")}${sc(p, "passing")}${sc(p, "dribbling")}${sc(p, "defending")}${sc(p, "physical")}
     <td><span class="chip pos">${esc(p.best_position)}</span></td>
     <td class="num rating ${ratingClass(p.best_score)}">${p.best_score.toFixed(1)}</td>
     <td class="num">${p.rank}/5</td><td class="num">${p.training_level}/30</td>
@@ -401,7 +407,7 @@ function renderPlayers(app) {
     <div class="toolbar">
       <button class="btn primary" id="add-player">+ Add player <span class="kbd">n</span></button>
       <input type="search" id="search" placeholder="Search name or position…" value="${esc(State._search || "")}" />
-      <span class="hint">${rows.length} shown · click a row to edit</span>
+      <span class="hint">${rows.length} shown · click a row to edit${badgeCols.length ? ` · <b style="color:var(--accent,#3ddc97)">stats include team badges</b> (${badgeCols.map((s) => `+${bd[s].toFixed(1)} ${STAT_ABBR[s]}`).join(", ")})` : ""}</span>
     </div>
     <div class="panel" style="padding:0;overflow-x:auto">
       <table><thead><tr>${head}</tr></thead><tbody>${body || `<tr><td colspan="13" class="empty-state">No players yet — add one.</td></tr>`}</tbody></table>
