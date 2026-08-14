@@ -520,6 +520,7 @@ function buildEditorForm() {
         ${stats.map((s) => `<div class="field" style="margin:0"><label>${statLabel(s, isGk)}</label><input id="f-${s}" type="number" value="${val(p[s])}" placeholder="—" ${autoOn ? "readonly" : ""} /></div>`).join("")}
       </div>
       ${autoOn ? `<div class="hint" style="margin-top:6px">Auto-filled from <b>base + training + skills</b> (rank raises OVR and fills the card's mandatory skills in order${numForced ? ` — ${forcedApplied} of ${numForced} applied at rank ${rankNow}` : " — no skill data for this card"}). Untick to edit by hand.</div>` : ""}
+      <div id="badge-preview"></div>
     </div>
     ${(autoOn && !isGk && choiceSkills.length && numForced) ? (choiceSlotsAvail > 0 ? `
     <div class="field"><label>Chosen skills — ${choiceSlotsAvail} available at rank ${rankNow}</label>
@@ -638,9 +639,27 @@ function buildEditorForm() {
     const res = StatCalc.deriveCurrent(base, baseOvr, g("f-training_level").value, g("f-rank").value, State.editing.skill_forced, State.editing.skill_choices, State.editing.positions);
     stats.forEach((s) => { if (res.stats[s] != null) g("f-" + s).value = res.stats[s]; });
     if (baseOvr != null && res.ovr != null) g("f-ovr").value = res.ovr;
+    updateBadgePreview();
+  }
+  // Read-only preview of the current stats WITH the active team badges folded in — so this panel can be
+  // matched against an in-game screenshot (the game always shows badges). Display only: the stored/current
+  // stats stay card-only, so the squad page still adds badges exactly once.
+  function updateBadgePreview() {
+    const host = document.getElementById("badge-preview"); if (!host) return;
+    const bd = State.badgeDelta || {};
+    const active = stats.some((s) => Math.abs(bd[s] || 0) >= 0.05);
+    if (!active) { host.innerHTML = ""; return; }
+    const g = (id) => document.getElementById(id);
+    const cells = stats.map((s) => {
+      const cur = Number((g("f-" + s) || {}).value) || 0;
+      return `${isGk ? statLabel(s, isGk) : STAT_ABBR[s]} <b>${Math.round(cur + (bd[s] || 0))}</b>`;
+    });
+    host.innerHTML = `<div class="hint" style="margin-top:6px;color:var(--accent,#3ddc97)">With active team badges (matches in-game): ${cells.join(" · ")}</div>`;
   }
   const autoBox = $("#auto-current");
   if (autoBox) autoBox.onchange = () => { syncEditor(); State.editing._autoCurrent = autoBox.checked; buildEditorForm(); };
+  updateBadgePreview();   // show badge-adjusted line whether or not auto-calc is on
+  stats.forEach((s) => { const el = document.getElementById("f-" + s); if (el) el.addEventListener("input", updateBadgePreview); });
   if (autoOn) {
     recalcCurrent();
     ["f-training_level", "f-rank", "f-skill_points", ...stats.map((s) => "b-" + s), ...choiceSkills.map((c) => "sc-" + c)]
