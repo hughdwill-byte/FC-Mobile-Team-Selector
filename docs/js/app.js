@@ -175,14 +175,38 @@ function badgesPanelHtml() {
     <details style="margin-top:6px"><summary class="hint" style="cursor:pointer">Add a badge</summary>
       <div class="badge-add">
         <input id="bg-name" placeholder="Name (e.g. Winter Wildcard)" />
-        <input id="bg-subs" placeholder="Sub-attrs it boosts, comma-separated (e.g. Finishing, Volley, Reactions)" />
-        <input id="bg-per" type="number" min="1" placeholder="per level (e.g. 1)" style="max-width:120px" />
-        <input id="bg-max" type="number" min="1" placeholder="max level (e.g. 3)" style="max-width:120px" />
+        <select id="bg-sub-pick">${badgeSubOptions()}</select>
+        <input id="bg-per" type="number" min="1" placeholder="per level" style="max-width:110px" />
+        <input id="bg-max" type="number" min="1" placeholder="max level" style="max-width:110px" />
         <button id="bg-add" class="btn small primary">Add badge</button>
       </div>
-      <div class="hint" style="margin-top:4px">Use the sub-attribute names the game shows (Finishing, Sprint Speed, Standing Tackle, …). The effect on the six stats is worked out for you.</div>
+      <div id="bg-sub-chips" class="badge-sub-chips" style="margin-top:6px">${badgeSubChips()}</div>
+      <div class="hint" style="margin-top:4px">Pick each sub-attribute the badge boosts from the dropdown (grouped by stat). The effect on the six stats is worked out for you.</div>
     </details>
   </div>`;
+}
+function badgeSubOptions() {
+  const byStat = State.subAttrs || {};
+  const picked = State._badgeSubs || [];
+  return `<option value="">+ add sub-attribute…</option>` + State.meta.main_stats.map((s) => {
+    const subs = (byStat[s] || []).filter((x) => picked.indexOf(x) < 0);
+    return subs.length ? `<optgroup label="${STAT_ABBR[s]}">${subs.map((x) => `<option value="${esc(x)}">${esc(x)}</option>`).join("")}</optgroup>` : "";
+  }).join("");
+}
+function badgeSubChips() {
+  const picked = State._badgeSubs || [];
+  return picked.length ? picked.map((x) => `<span class="chip bsub" data-sub="${esc(x)}">${esc(x)} ✕</span>`).join("") : `<span class="hint">no sub-attributes selected yet</span>`;
+}
+function refreshBadgeSubUI() {
+  const pick = $("#bg-sub-pick"), chips = $("#bg-sub-chips");
+  if (pick) pick.innerHTML = badgeSubOptions();
+  if (chips) {
+    chips.innerHTML = badgeSubChips();
+    $$("#bg-sub-chips .bsub").forEach((c) => (c.onclick = () => {
+      State._badgeSubs = (State._badgeSubs || []).filter((x) => x !== c.dataset.sub);
+      refreshBadgeSubUI();
+    }));
+  }
 }
 async function renderSquad(app) {
   const potential = State._squadMode === "potential";
@@ -190,6 +214,8 @@ async function renderSquad(app) {
   if (!State.squad.enough_players) return notEnough(app, State.squad.have);
   State.badges = await API.getBadges();
   State.badgeDelta = await API.badgeDelta();
+  if (!State.subAttrs) State.subAttrs = await API.subAttrsByStat();
+  if (!State._badgeSubs) State._badgeSubs = [];
   State.badgeSlots = [0, 1, 2].map((i) => State.badges.active[i] ? { name: State.badges.active[i].name, level: State.badges.active[i].level } : null);
   const results = State.squad.results;
   const sel = Math.min(State.selectedFormation, results.length - 1);
@@ -299,14 +325,20 @@ async function renderSquad(app) {
     State.badgeSlots[i].level = Math.max(1, Math.min(maxL, Math.round(Number(inp.value) || 1)));
     saveBadges();
   }));
+  const subPick = $("#bg-sub-pick");
+  if (subPick) subPick.onchange = () => {
+    if (subPick.value) { State._badgeSubs = [...(State._badgeSubs || []), subPick.value]; refreshBadgeSubUI(); }
+  };
+  refreshBadgeSubUI();   // wire chip removal for any already-selected subs
   const addBtn = $("#bg-add");
   if (addBtn) addBtn.onclick = async () => {
     const name = ($("#bg-name").value || "").trim();
-    const subs = ($("#bg-subs").value || "").split(",").map((s) => s.trim()).filter(Boolean);
+    const subs = (State._badgeSubs || []).slice();
     const per = Math.max(1, Number($("#bg-per").value) || 1);
     const max = Math.max(1, Number($("#bg-max").value) || 3);
-    if (!name || !subs.length) return toast("Name and at least one sub-attribute needed", true);
+    if (!name || !subs.length) return toast("Enter a name and pick at least one sub-attribute", true);
     await API.addCustomBadge({ name, subs, per_level: per, max_level: max });
+    State._badgeSubs = [];
     toast(`Added badge "${name}"`);
     render();
   };

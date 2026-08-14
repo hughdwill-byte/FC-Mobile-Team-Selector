@@ -289,3 +289,8 @@ input[readonly] { opacity:.75; cursor:not-allowed; background:rgba(255,255,255,.
 .badge-slot .badge-level { width: 56px; flex: 0 0 auto; }
 .badge-add { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
 .badge-add input { flex: 1 1 160px; }
+
+/* Badge sub-attribute picker chips */
+.badge-sub-chips { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.chip.bsub { cursor: pointer; user-select: none; background: #2a2440; border-color: #4a3a6a; }
+.chip.bsub:hover { background: #3a2f55; }

@@ -297,6 +297,8 @@ const STAT_WEIGHTS = {
   defending:{Marking:0.322,"Standing Tackle":0.311,"Sliding Tackle":0.207,Awareness:0.026,Heading:0.132},
   physical:{Strength:0.45,Aggression:0.3,Jumping:0.25,Stamina:0.0},
 };
+// Sub-attributes grouped by the main stat they feed — for the "add badge" sub-attribute picker.
+const SUBATTRS_BY_STAT = {}; MAIN_STATS.forEach((s) => SUBATTRS_BY_STAT[s] = Object.keys(STAT_WEIGHTS[s]));
 // Known team badges. subs = sub-attributes each level boosts by `per_level`. Seasonal badges can be added
 // by the user; a badge may instead/also carry a direct main-stat boost via `stats:{shooting:2,...}`.
 const DEFAULT_BADGES = [
@@ -1059,6 +1061,7 @@ window.API.setActiveBadges = (active) => { saveBadges(active, null); return A({ 
 window.API.addCustomBadge = (badge) => { const d = badgeStore(); const custom = (d.custom || []).filter((b) => b.name !== badge.name); custom.push(badge); saveBadges(null, custom); return A({ ok:true }); };
 window.API.removeCustomBadge = (name) => { const d = badgeStore(); const custom = (d.custom || []).filter((b) => b.name !== name); const active = (d.active || []).filter((a) => a.name !== name); saveBadges(active, custom); return A({ ok:true }); };
 window.API.badgeDelta = () => A(badgeStatDelta());
+window.API.subAttrsByStat = () => A(SUBATTRS_BY_STAT);
 
 // expose a few internals for optional Node cross-testing
 window.__engine = { optimize, planUpgrades, planTrainingBudget, takeoverPlan, statesFromStore, bestSquadScore, potentialState,
