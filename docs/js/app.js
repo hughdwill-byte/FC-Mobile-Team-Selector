@@ -613,7 +613,7 @@ function buildEditorForm() {
     (StatCalc.CHOICE_SKILLS || []).forEach((c) => { const el = g("sc-" + c); if (el) { const v = Number(el.value) || 0; if (v > 0) choices[c] = v; } });
     State.editing.skill_choices = Object.keys(choices).length ? choices : null;
     // Current = base + training + forced-skill delta (rank-scaled) + chosen skills; rank also raises OVR.
-    const res = StatCalc.deriveCurrent(base, baseOvr, g("f-training_level").value, g("f-rank").value, State.editing.skill_forced, State.editing.skill_choices);
+    const res = StatCalc.deriveCurrent(base, baseOvr, g("f-training_level").value, g("f-rank").value, State.editing.skill_forced, State.editing.skill_choices, State.editing.positions);
     stats.forEach((s) => { if (res.stats[s] != null) g("f-" + s).value = res.stats[s]; });
     if (baseOvr != null && res.ovr != null) g("f-ovr").value = res.ovr;
   }

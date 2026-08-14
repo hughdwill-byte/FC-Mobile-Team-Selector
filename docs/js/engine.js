@@ -69,12 +69,30 @@ const DEFAULT_RULES = {
     ],
   },
   growth: {
-    verified: false,
+    verified: true,
     default_gain_per_level: { pace:0.4, shooting:0.4, passing:0.4, dribbling:0.4, defending:0.4, physical:0.4 },
-    // Flat training boost added to every face stat at each training level (index = level 0..30).
-    // Community-compiled from FC Mobile; the boost is not linear (some levels add nothing, others add more),
-    // so a card's trained stat is base_stat + training_boost[level]. Used when base stats are known;
-    // if a player has a per-stat growth_override that takes precedence for that stat.
+    // How training (card level 0..30) raises the six face stats. Measured in-game: RenderZ stats are the
+    // level-0 base, and level 0/10/20/30 screenshots show each stat climbs LINEARLY with level, so the gain
+    // at level L is  train_growth_l30[stat] * L / 30 . Crucially the gain is NOT uniform across the six
+    // stats - it is position-shaped: a striker's pace/shooting/physical rocket up while its defending barely
+    // moves; a centre-back's defending/physical lead. Two different cards of the same position grow by the
+    // same amounts regardless of their base values (Kempes 122 and Totti 120 both gain +36 PAC), so the
+    // profile is a per-position constant. Order: pace, shooting, passing, dribbling, defending, physical.
+    train_growth_l30: {
+      ST: [36, 29, 17, 26, 10, 33],   // strikers: attack + physical lead, defending flat
+      CM: [24, 21, 31, 30, 21, 12],   // midfielders: passing + dribbling lead, physical trails
+      CB: [21, 12, 17, 24, 36, 32],   // centre-backs: defending + physical lead, shooting flat
+      GK: [36, 36, 36, 36, 36, 33],   // keepers: all keeper stats climb equally, physical slightly less
+    },
+    // Positions not directly measured borrow the nearest measured archetype's growth profile.
+    train_growth_bucket: {
+      ST:"ST", CF:"ST", RW:"ST", LW:"ST",
+      CAM:"CM", CM:"CM", CDM:"CM", RM:"CM", LM:"CM",
+      CB:"CB", RB:"CB", LB:"CB", RWB:"CB", LWB:"CB",
+      GK:"GK",
+    },
+    // Legacy uniform fallback (only used if a player's position is unknown): a single flat boost added to
+    // every stat at each level. Superseded by the position-shaped model above.
     training_boost: [0,1,1,2,2,3,3,4,4,5,6,6,7,7,8,9,9,10,10,11,12,12,13,13,14,15,15,16,16,17,18],
     max_training_level: 30,
     rankup_unlocks_every_levels: 5,
@@ -392,14 +410,12 @@ function withTrainingLevel(state, delta) {
   const nl = state.training_level + delta;
   if (nl > maxL || delta <= 0) return null;
   const ns = copyState(state); ns.training_level = nl;
-  const boost = g.training_boost;
   const ov = state.growth_override || null;
-  const boostAt = (lvl) => (Array.isArray(boost) && boost.length) ? (lvl < boost.length ? boost[lvl] : boost[boost.length - 1]) : null;
-  const flatFrom = boostAt(state.training_level), flatTo = boostAt(nl);
-  MAIN_STATS.forEach((s) => {
+  const gFrom = trainGrowth(ns.positions, state.training_level);   // position-shaped cumulative gain
+  const gTo = trainGrowth(ns.positions, nl);
+  MAIN_STATS.forEach((s, i) => {
     if (ov && ov[s] != null) ns.stats[s] = ns.stats[s] + Number(ov[s]) * delta;   // player-specific per-level growth
-    else if (flatTo != null) ns.stats[s] = ns.stats[s] + (flatTo - flatFrom);      // community flat training boost
-    else ns.stats[s] = ns.stats[s] + (ns.growth[s] || 0) * delta;                  // fallback linear model
+    else ns.stats[s] = ns.stats[s] + (gTo[i] - gFrom[i]);                          // position-shaped training growth
   });
   return ns;
 }
@@ -409,12 +425,12 @@ function withTrainingLevel(state, delta) {
 function trainStep(state) {
   const g = loadRule("growth"); const maxL = g.max_training_level || 30;
   if (state.training_level >= maxL) return null;
-  const boost = g.training_boost, ov = state.growth_override || null;
+  const ov = state.growth_override || null;
   const tC = loadRule("costs").training.per_level;
   let target = state.training_level + 1;
-  if (Array.isArray(boost) && boost.length && !ov) {
-    const cur = state.training_level < boost.length ? boost[state.training_level] : boost[boost.length - 1];
-    while (target <= maxL) { const b = target < boost.length ? boost[target] : boost[boost.length - 1]; if (b > cur) break; target++; }
+  if (!ov) {                                                   // skip "dead" levels where no stat actually moves
+    const cur = trainGrowth(state.positions, state.training_level);
+    while (target <= maxL) { const b = trainGrowth(state.positions, target); if (MAIN_STATS.some((_, i) => b[i] > cur[i])) break; target++; }
     if (target > maxL) return null;
   }
   const ns = withTrainingLevel(state, target - state.training_level); if (!ns) return null;
@@ -463,13 +479,36 @@ function choiceDelta(skillChoices) {
 function choiceSlots(rank, numForced) {
   return Math.max(0, (Math.round(Number(rank) || 0)) - (Number(numForced) || 0));
 }
+// The position-shaped per-stat training growth vector (total gain from level 0 to max), or null if the
+// position is unknown / no table is configured. positions is the player's position list; the first entry
+// (the card's main position) selects the profile.
+function posGrowthVec(positions) {
+  const g = loadRule("growth");
+  const table = g.train_growth_l30, bucket = g.train_growth_bucket || {};
+  if (!table) return null;
+  const p = String((positions && positions[0]) || "").toUpperCase();
+  const key = table[p] ? p : bucket[p];
+  return (key && table[key]) ? table[key] : null;
+}
+// Per-stat cumulative training gain at a given level: [pace..physical]. Uses the position-shaped model
+// (growth linear in level), falling back to the legacy uniform boost when the position is unknown.
+function trainGrowth(positions, level) {
+  const g = loadRule("growth"); const maxL = g.max_training_level || 30;
+  const lvl = Math.max(0, Math.min(maxL, Math.round(Number(level) || 0)));
+  const vec = posGrowthVec(positions);
+  if (vec) return vec.map((v) => Math.round((Number(v) || 0) * lvl / maxL));
+  const boost = g.training_boost || [];
+  const tb = boost.length ? (lvl < boost.length ? boost[lvl] : boost[boost.length - 1]) : 0;
+  return [tb, tb, tb, tb, tb, tb];
+}
 // current = base + training + skills; rank also raises OVR.
 // skillForced is the card's ordered list of forced-skill six-stat deltas; rank applies the first `rank`
-// of them (mandatory, in order). Player-choice skills add on top once all forced are done.
-function deriveCurrent(base, baseOvr, level, rank, skillForced, skillChoices) {
-  const g = loadRule("growth"), boost = g.training_boost || [];
+// of them (mandatory, in order). Player-choice skills add on top once all forced are done. positions
+// selects the position-shaped training-growth profile (training raises each stat by a different amount).
+function deriveCurrent(base, baseOvr, level, rank, skillForced, skillChoices, positions) {
+  const g = loadRule("growth");
   const lvl = Math.max(0, Math.min(g.max_training_level || 30, Math.round(Number(level) || 0)));
-  const tb = boost.length ? (lvl < boost.length ? boost[lvl] : boost[boost.length - 1]) : 0;
+  const tg = trainGrowth(positions, lvl);                    // per-stat training gain (position-shaped)
   const ru = loadRule("rankup"); const maxR = ru.max_rank || 5;
   const rk = Math.max(0, Math.min(maxR, Math.round(Number(rank) || 0)));
   const fsd = Array.isArray(skillForced) ? skillForced : null;
@@ -479,7 +518,7 @@ function deriveCurrent(base, baseOvr, level, rank, skillForced, skillChoices) {
   const stats = {};
   MAIN_STATS.forEach((s, i) => {
     const b = Number((base || {})[s]);
-    stats[s] = isNaN(b) ? null : Math.floor(b + tb + fd[i] + ch[i]);
+    stats[s] = isNaN(b) ? null : Math.floor(b + tg[i] + fd[i] + ch[i]);
   });
   let ovr = Number(baseOvr);                                  // rank raises OVR only (not flat stats)
   if (!isNaN(ovr)) { const og = ru.ovr_gain || []; for (let r = 0; r < rk; r++) ovr += (r < og.length ? og[r] : 1); }
@@ -1045,8 +1084,8 @@ function loadSample(replace) {
   SAMPLE.forEach((r) => {
     const [name,ovr,rank,lvl,pac,sho,pas,dri,def,phy,pos,styles] = r;
     const cur = { pace:pac, shooting:sho, passing:pas, dribbling:dri, defending:def, physical:phy };
-    const tb = DEFAULT_RULES.growth.training_boost; const off = lvl < tb.length ? tb[lvl] : tb[tb.length - 1];
-    const base = {}; MAIN_STATS.forEach((s) => base[s] = cur[s] - off);
+    const tg = trainGrowth(pos, lvl);                          // position-shaped training gain at this level
+    const base = {}; MAIN_STATS.forEach((s, i) => base[s] = cur[s] - tg[i]);
     const p = newPlayer();
     Object.assign(p, { name, ovr, rank, training_level:lvl }, cur);
     p.positions = pos; p.base_stats = base; p.base_ovr = ovr;   // sample ovr is the base (rank-0) value
