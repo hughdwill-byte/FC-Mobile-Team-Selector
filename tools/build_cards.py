@@ -39,15 +39,25 @@ def load_skill_fx():
         return None
 
 
-def skill_delta(path_str, fx):
-    """Maxed forced-skill effect on the six headline stats, from a card's skill_boost_path.
-    Skills add FLAT amounts to sub-attributes; the headline delta is weight*boost summed up.
-    Roles use their level-2 amount; skill lines their single amount. ALL-CAPS entries are the
-    player's manual choice and are skipped. Returns [PAC,SHO,PAS,DRI,DEF,PHY] or None."""
+def _skill_head_delta(entry, weights):
+    """One skill's effect on the six headline stats (flat sub-attribute boosts folded via weights)."""
+    amt = entry["l2"] if entry.get("l2") is not None else entry.get("l1")
+    if amt is None:
+        return None
+    boosts = {}
+    for s in entry["subs"]:
+        boosts[s] = boosts.get(s, 0) + amt
+    return [round(sum(weights.get(head, {}).get(s, 0) * b for s, b in boosts.items())) for head in MAIN6]
+
+
+def forced_skill_deltas(path_str, fx):
+    """Ordered list of the FORCED (non-caps) skills' six-stat deltas, in path order. Skills are applied in
+    order as a card ranks up (one per rank), forced ones first, so the engine applies the first `rank` of
+    these. ALL-CAPS entries are the player's manual choice and are excluded. Returns a list of [6] or None."""
     if not path_str or not fx:
         return None
     skills, aliases, weights = fx["skills"], fx.get("aliases", {}), fx["weights"]
-    boosts = {}
+    out = []
     for part in str(path_str).split(">"):
         p = part.strip()
         if not p or p.isupper():           # blank or ALL-CAPS player choice
@@ -55,18 +65,10 @@ def skill_delta(path_str, fx):
         entry = skills.get(aliases.get(p, p))
         if not entry:
             continue
-        amt = entry["l2"] if entry["l2"] is not None else entry["l1"]
-        if amt is None:
-            continue
-        for s in entry["subs"]:
-            boosts[s] = boosts.get(s, 0) + amt
-    if not boosts:
-        return None
-    out = []
-    for head in MAIN6:
-        w = weights.get(head, {})
-        out.append(round(sum(w.get(s, 0) * b for s, b in boosts.items())))
-    return out if any(out) else None
+        d = _skill_head_delta(entry, weights)
+        if d:
+            out.append(d)
+    return out or None
 
 # The app's six stat columns, in order: pace, shooting, passing, dribbling, defending, physical.
 OUTFIELD = ["PAC", "SHO", "PAS", "DRI", "DEF", "PHY"]
@@ -161,9 +163,9 @@ def build(xlsx: Path) -> dict:
         if ps:
             card["ps"] = ps               # [[name, level], ...]
         if not is_gk:                     # skill deltas: outfield only (GK formula differs)
-            sd = skill_delta(row.get("skill_boost_path"), fx)
-            if sd:
-                card["sd"] = sd           # maxed forced-skill effect on the six stats
+            fsd = forced_skill_deltas(row.get("skill_boost_path"), fx)
+            if fsd:
+                card["fsd"] = fsd         # ordered forced-skill six-stat deltas (apply first `rank`)
         cards.append(card)
     # newest/highest first is nice for ties; keep sheet order otherwise
     return {

@@ -455,6 +455,10 @@ function buildEditorForm() {
   const autoOn = hasBase && p._autoCurrent !== false;   // auto-fill current stats from base + training/rank/skills
   const choiceSkills = (window.StatCalc && StatCalc.CHOICE_SKILLS) || [];
   const titleCase = (s) => s.charAt(0) + s.slice(1).toLowerCase();
+  const numForced = (p.skill_forced || []).length;                       // mandatory skills on this card
+  const rankNow = Math.max(0, Math.round(Number(p.rank) || 0));
+  const forcedApplied = Math.min(numForced, rankNow);
+  const choiceSlotsAvail = window.StatCalc ? StatCalc.choiceSlots(rankNow, numForced) : 0;
   const posChips = State.meta.positions.map((code) =>
     `<span class="chip pos ${p.positions.includes(code) ? "" : "off"}" data-pos="${code}"
       style="cursor:pointer;${p.positions.includes(code) ? "" : "opacity:.35"}">${code}</span>`).join(" ");
@@ -493,17 +497,20 @@ function buildEditorForm() {
       <div class="statgrid">
         ${stats.map((s) => `<div class="field" style="margin:0"><label>${statLabel(s, isGk)}</label><input id="f-${s}" type="number" value="${val(p[s])}" placeholder="—" ${autoOn ? "readonly" : ""} /></div>`).join("")}
       </div>
-      ${autoOn ? `<div class="hint" style="margin-top:6px">Auto-filled from <b>base + training + skills</b> (rank raises OVR and scales the card's forced skills${State.editing.skill_delta ? "" : " — no skill data for this card"}). Untick to edit by hand.</div>` : ""}
+      ${autoOn ? `<div class="hint" style="margin-top:6px">Auto-filled from <b>base + training + skills</b> (rank raises OVR and fills the card's mandatory skills in order${numForced ? ` — ${forcedApplied} of ${numForced} applied at rank ${rankNow}` : " — no skill data for this card"}). Untick to edit by hand.</div>` : ""}
     </div>
-    ${(autoOn && !isGk && choiceSkills.length) ? `
-    <div class="field"><label>Chosen skills at max rank (optional)</label>
-      <div class="hint" style="margin-bottom:6px">The skill(s) you picked to rank up at the end — set how many levels you put into each. Adds on top of the auto-calc.</div>
+    ${(autoOn && !isGk && choiceSkills.length && numForced) ? (choiceSlotsAvail > 0 ? `
+    <div class="field"><label>Chosen skills — ${choiceSlotsAvail} available at rank ${rankNow}</label>
+      <div class="hint" style="margin-bottom:6px">All ${numForced} mandatory skills are done. Pick which capitalised skills you leveled and how much (roughly ${choiceSlotsAvail} level${choiceSlotsAvail === 1 ? "" : "s"} to spread across them).</div>
       <div class="statgrid">
         ${choiceSkills.map((c) => `<div class="field" style="margin:0"><label>${titleCase(c)}</label>
           <input id="sc-${c}" type="number" min="0" placeholder="0"
             value="${p.skill_choices && p.skill_choices[c] ? p.skill_choices[c] : ""}" /></div>`).join("")}
       </div>
-    </div>` : ""}
+    </div>` : `
+    <div class="field"><label>Chosen skills</label>
+      <div class="hint">Locked — the ${numForced} mandatory skills fill first. Player-choice skills open at rank ${numForced} (this card is rank ${rankNow}).</div>
+    </div>`) : ""}
     <div class="field"><label>Positions (click to toggle)</label><div id="pos-chips">${posChips}</div></div>
     <div class="field"><label>Unlocks on next rank up (optional)</label>
       <input id="f-rankup_positions" value="${esc((p.rankup_positions || []).join(", "))}" placeholder="e.g. CF, RW" /></div>
@@ -606,7 +613,7 @@ function buildEditorForm() {
     (StatCalc.CHOICE_SKILLS || []).forEach((c) => { const el = g("sc-" + c); if (el) { const v = Number(el.value) || 0; if (v > 0) choices[c] = v; } });
     State.editing.skill_choices = Object.keys(choices).length ? choices : null;
     // Current = base + training + forced-skill delta (rank-scaled) + chosen skills; rank also raises OVR.
-    const res = StatCalc.deriveCurrent(base, baseOvr, g("f-training_level").value, g("f-rank").value, State.editing.skill_delta, State.editing.skill_choices);
+    const res = StatCalc.deriveCurrent(base, baseOvr, g("f-training_level").value, g("f-rank").value, State.editing.skill_forced, State.editing.skill_choices);
     stats.forEach((s) => { if (res.stats[s] != null) g("f-" + s).value = res.stats[s]; });
     if (baseOvr != null && res.ovr != null) g("f-ovr").value = res.ovr;
   }
@@ -616,6 +623,9 @@ function buildEditorForm() {
     recalcCurrent();
     ["f-training_level", "f-rank", "f-skill_points", ...stats.map((s) => "b-" + s), ...choiceSkills.map((c) => "sc-" + c)]
       .forEach((id) => { const el = document.getElementById(id); if (el) el.addEventListener("input", recalcCurrent); });
+    // Rank changes which skills are applied and whether choices are unlocked — rebuild the form on blur.
+    const rankEl = $("#f-rank");
+    if (rankEl) rankEl.addEventListener("change", () => { syncEditor(); buildEditorForm(); });
   }
 }
 
@@ -629,7 +639,7 @@ function applyCard(card) {
   p.positions = (body.positions || []).slice();
   p.rankup_positions = (body.rankup_positions || []).slice();   // alts that unlock on rank up
   if (body.playstyles && body.playstyles.length) p.playstyles = body.playstyles.slice();
-  p.skill_delta = body.skill_delta || null;   // forced-skill effect on the six stats (scaled by rank)
+  p.skill_forced = body.skill_forced || null;   // ordered forced-skill deltas (first `rank` applied)
   // Card stats are the BASE stats (level 0, rank 0). Fill Base stats; current stats are then
   // auto-calculated from base + your training level / rank / skill points (see the toggle).
   const base = {};
@@ -694,7 +704,7 @@ function collectEditor() {
     notes: g("f-notes").value.trim(),
     variant: p.variant || "",           // promo/season carried from the card database
     base_ovr: p.base_ovr != null ? p.base_ovr : null,   // rank-0 OVR (Team OVR uses this, not current)
-    skill_delta: p.skill_delta || null,
+    skill_forced: p.skill_forced || null,
     skill_choices: p.skill_choices || null,   // player-picked max-rank skills {name: level}
   };
 }

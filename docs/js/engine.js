@@ -244,7 +244,7 @@ function savePlayers(list) { localStorage.setItem(LS_PLAYERS, JSON.stringify(lis
 function nextId(list) { return list.reduce((m, p) => Math.max(m, p.id || 0), 0) + 1; }
 
 const EDITABLE = ["name","ovr","rank","training_level", ...MAIN_STATS, "base_stats","base_ovr",
-  "positions","rankup_positions","playstyles","growth_override","skill_points","skill_level","skill_delta","skill_choices","notes","variant"];
+  "positions","rankup_positions","playstyles","growth_override","skill_points","skill_level","skill_forced","skill_choices","notes","variant"];
 function coerce(k, v) {
   if (v === null || v === undefined) return null;
   if (["ovr","rank","training_level","skill_points","base_ovr","skill_level"].includes(k)) { const n = parseInt(v, 10); return isNaN(n) ? 0 : n; }
@@ -255,7 +255,7 @@ function newPlayer() {
   return { id:null, name:"", ovr:50, rank:0, training_level:0,
     pace:50, shooting:50, passing:50, dribbling:50, defending:50, physical:50,
     base_stats:null, base_ovr:null, positions:[], rankup_positions:[], playstyles:[],
-    growth_override:null, skill_points:0, skill_level:0, skill_delta:null, skill_choices:null, notes:"", variant:"" };
+    growth_override:null, skill_points:0, skill_level:0, skill_forced:null, skill_choices:null, notes:"", variant:"" };
 }
 function applyData(p, data) {
   EDITABLE.forEach((k) => { if (k in data && data[k] !== null && data[k] !== undefined) p[k] = coerce(k, data[k]); });
@@ -458,28 +458,33 @@ function choiceDelta(skillChoices) {
   return out;
 }
 
-// current = base + training + skill delta (scaled by rank); rank also raises OVR.
-// skillDelta is the card's maxed forced-skill effect on the six stats ([PAC..PHY]); forced skills fill
-// in as the card ranks up (~complete by rank 4), so we scale that delta by min(rank/4, 1).
-function deriveCurrent(base, baseOvr, level, rank, skillDelta, skillChoices) {
+// How many player-choice (all-caps) skills a card can pick: skills fill in order as it ranks up (one per
+// rank), the mandatory forced skills first, so the choices only open up once all forced skills are done.
+function choiceSlots(rank, numForced) {
+  return Math.max(0, (Math.round(Number(rank) || 0)) - (Number(numForced) || 0));
+}
+// current = base + training + skills; rank also raises OVR.
+// skillForced is the card's ordered list of forced-skill six-stat deltas; rank applies the first `rank`
+// of them (mandatory, in order). Player-choice skills add on top once all forced are done.
+function deriveCurrent(base, baseOvr, level, rank, skillForced, skillChoices) {
   const g = loadRule("growth"), boost = g.training_boost || [];
   const lvl = Math.max(0, Math.min(g.max_training_level || 30, Math.round(Number(level) || 0)));
   const tb = boost.length ? (lvl < boost.length ? boost[lvl] : boost[boost.length - 1]) : 0;
   const ru = loadRule("rankup"); const maxR = ru.max_rank || 5;
   const rk = Math.max(0, Math.min(maxR, Math.round(Number(rank) || 0)));
-  const sk = Math.min(rk / 4, 1);
-  const sd = Array.isArray(skillDelta) ? skillDelta : null;
-  const ch = choiceDelta(skillChoices);                      // player-picked skills (not rank-scaled)
+  const fsd = Array.isArray(skillForced) ? skillForced : null;
+  const fd = [0, 0, 0, 0, 0, 0];
+  if (fsd) { const applied = Math.min(fsd.length, rk); for (let i = 0; i < applied; i++) for (let j = 0; j < 6; j++) fd[j] += Number(fsd[i][j]) || 0; }
+  const ch = choiceDelta(skillChoices);                      // player-picked skills (once forced are done)
   const stats = {};
   MAIN_STATS.forEach((s, i) => {
     const b = Number((base || {})[s]);
-    const d = (sd && sd[i] != null ? Number(sd[i]) * sk : 0) + ch[i];
-    stats[s] = isNaN(b) ? null : Math.floor(b + tb + d);
+    stats[s] = isNaN(b) ? null : Math.floor(b + tb + fd[i] + ch[i]);
   });
   let ovr = Number(baseOvr);                                  // rank raises OVR only (not flat stats)
   if (!isNaN(ovr)) { const og = ru.ovr_gain || []; for (let r = 0; r < rk; r++) ovr += (r < og.length ? og[r] : 1); }
   else ovr = null;
-  return { stats, ovr };
+  return { stats, ovr, forced_applied: fsd ? Math.min(fsd.length, rk) : 0, choice_slots: choiceSlots(rk, fsd ? fsd.length : 0) };
 }
 
 // ----------------------------------------------------------------- Team OVR (FC Mobile roster metric)
@@ -1002,7 +1007,7 @@ function mapPlaystyle(raw) {
 function cardToPlayer(card) {
   const body = { name: card.n, ovr: card.o, positions: (card.p || []).slice(),
     rankup_positions: (card.ru || []).slice(), variant: card.v || "", is_gk: !!card.gk,
-    skill_delta: card.sd ? card.sd.slice() : null };
+    skill_forced: card.fsd ? card.fsd.map((a) => a.slice()) : null };
   MAIN_STATS.forEach((s, i) => { body[s] = card.s[i]; });
   // Playstyles: [[name, level], ...] -> {name, plus}; Level 2 is the gold (PlayStyle+) version.
   body.playstyles = (card.ps || [])
@@ -1067,5 +1072,5 @@ window.API.subAttrsByStat = () => A(SUBATTRS_BY_STAT);
 window.__engine = { optimize, planUpgrades, planTrainingBudget, takeoverPlan, statesFromStore, bestSquadScore, potentialState,
   bestTeamOvr, teamOvrOf, trainStep, withTrainingLevel, xpToReach, foodXp, skillMainStats, deriveCurrent };
 // Synchronous helper for the editor's live "auto-calc current stats" fields.
-window.StatCalc = { deriveCurrent, CHOICE_SKILLS, CHOICE_DELTAS };
+window.StatCalc = { deriveCurrent, choiceSlots, CHOICE_SKILLS, CHOICE_DELTAS };
 })();
