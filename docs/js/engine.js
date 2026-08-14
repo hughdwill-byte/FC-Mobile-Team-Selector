@@ -79,18 +79,22 @@ const DEFAULT_RULES = {
     // same amounts regardless of their base values (Kempes 122 and Totti 120 both gain +36 PAC), so the
     // profile is a per-position constant. Order: pace, shooting, passing, dribbling, defending, physical.
     train_growth_l30: {
-      ST: [36, 29, 17, 26, 10, 33],   // strikers: attack + physical lead, defending flat
-      CM: [24, 21, 31, 30, 21, 12],   // midfielders: passing + dribbling lead, physical trails
-      CB: [21, 12, 17, 24, 36, 32],   // centre-backs: defending + physical lead, shooting flat
-      GK: [36, 36, 36, 36, 36, 33],   // keepers: all keeper stats climb equally, physical slightly less
+      ST:  [36, 29, 17, 26, 10, 33],  // strikers: pace/shooting/physical lead, defending flat
+      RW:  [36, 29, 25, 33,  8, 16],  // wingers: pace + dribbling lead, defending lowest
+      LW:  [36, 29, 25, 33,  8, 16],
+      RM:  [36, 20, 30, 33, 14,  9],  // wide mids: pace/dribbling/passing lead, physical low
+      LM:  [36, 20, 31, 33, 14,  9],
+      CAM: [24, 25, 28, 33,  9, 13],  // attacking mid: dribbling/passing/shooting lead, defending lowest
+      CM:  [24, 21, 31, 30, 21, 12],  // central mid: passing + dribbling lead, physical trails
+      CDM: [21, 12, 25, 25, 34, 28],  // defensive mid: defending + physical lead
+      RB:  [36, 11, 24, 30, 29, 19],  // full-backs: pace-led, then dribbling/defending; not shooting
+      LB:  [36, 10, 23, 30, 29, 20],
+      CB:  [21, 12, 17, 24, 36, 32],  // centre-backs: defending + physical lead, shooting flat
+      GK:  [36, 36, 36, 36, 36, 33],  // keepers: all keeper stats climb equally, physical slightly less
     },
-    // Positions not directly measured borrow the nearest measured archetype's growth profile.
-    train_growth_bucket: {
-      ST:"ST", CF:"ST", RW:"ST", LW:"ST",
-      CAM:"CM", CM:"CM", CDM:"CM", RM:"CM", LM:"CM",
-      CB:"CB", RB:"CB", LB:"CB", RWB:"CB", LWB:"CB",
-      GK:"GK",
-    },
+    // The three positions not directly measured borrow their nearest measured neighbour:
+    // a centre-forward grows like a striker; wing-backs like their side's full-back.
+    train_growth_bucket: { CF:"ST", RWB:"RB", LWB:"LB" },
     // Legacy uniform fallback (only used if a player's position is unknown): a single flat boost added to
     // every stat at each level. Superseded by the position-shaped model above.
     training_boost: [0,1,1,2,2,3,3,4,4,5,6,6,7,7,8,9,9,10,10,11,12,12,13,13,14,15,15,16,16,17,18],
