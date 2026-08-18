@@ -1,0 +1,61 @@
+name: Update card database
+
+# Scrapes the newest RenderZ cards once a day, appends them to the working spreadsheet, and rebuilds
+# docs/data/cards.json (what the site reads) - then commits the result. Also runnable on demand.
+#
+# REQUIRES these to be committed to the repo for the scrape to run (they live on your computer today):
+#   tools/renderz_scraper.py     tools/renderz_details.py     (your scraper modules)
+#   renderz_full_24.xlsx         (your DETAILED sheet - keeps skills / rank-up positions / playstyles;
+#                                 without it the basic sheet is used and those are dropped)
+# If a tools/requirements-scraper.txt exists it is installed; otherwise a sensible default set is used.
+
+on:
+  schedule:
+    - cron: "30 11 * * *"     # every day at 11:30 UTC
+  workflow_dispatch: {}
+
+permissions:
+  contents: write            # needed to commit the refreshed cards.json back
+
+concurrency:
+  group: update-cards
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out this repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --quiet --upgrade pip
+          if [ -f tools/requirements-scraper.txt ]; then
+            pip install --quiet -r tools/requirements-scraper.txt
+          else
+            pip install --quiet pandas openpyxl beautifulsoup4 lxml playwright
+          fi
+          # The scraper runs a headless browser; install Chromium for Playwright (harmless if unused).
+          python -m playwright install --with-deps chromium || true
+
+      - name: Update cards from RenderZ and rebuild cards.json
+        run: python tools/renderz_update.py
+
+      - name: Commit changes if any
+        run: |
+          if [ -n "$(git status --porcelain docs/data/cards.json renderz_full_24.xlsx renderz_players_24.xlsx)" ]; then
+            git config user.name  "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add docs/data/cards.json renderz_full_24.xlsx renderz_players_24.xlsx 2>/dev/null || git add docs/data/cards.json
+            git commit -m "Update card database (scheduled)"
+            git push
+            echo "Pushed refreshed cards.json."
+          else
+            echo "No changes - card database already up to date."
+          fi
