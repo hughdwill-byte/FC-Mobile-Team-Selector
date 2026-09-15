@@ -25,6 +25,7 @@ Needs, alongside this script:  renderz_scraper.py  and  renderz_details.py
 """
 
 import sys
+import os
 import json
 import asyncio
 import pathlib
@@ -56,6 +57,13 @@ SEASON = sys.argv[2] if len(sys.argv) > 2 else rs.SEASON
 UPDATE_STATS_MODE = "both"   # capture new outfield (Player stats) AND new GKs (GK stats)
 HEADLESS = True              # run both stages invisibly
 
+# FULL catch-up mode (set env RENDERZ_FULL=1). Instead of trusting RenderZ's "added" sort and stopping at
+# the first known cards, it re-scans EVERY card in an overall band with no early stop, so nothing can be
+# missed - the fix for "new cards not showing up". The band's top is raised well past 122 because new-
+# season cards out-rate the old cap (power creep); tune with RENDERZ_MIN / RENDERZ_MAX.
+FULL = os.environ.get("RENDERZ_FULL") == "1"
+FULL_BAND = (int(os.environ.get("RENDERZ_MIN", "100")), int(os.environ.get("RENDERZ_MAX", "200")))
+
 
 def rebuild_site_cards():
     """Regenerate docs/data/cards.json from the (updated) spreadsheet, using the site's own builder."""
@@ -85,10 +93,16 @@ def main():
         print("  NOTE: this sheet has no detail columns, so the rebuilt cards.json will lack skills / "
               "rank-up positions / playstyles. Use the detailed renderz_full sheet to keep those.")
 
-    # 1) scrape the newest list, stopping when we hit known cards
-    print(f"Checking for new cards (season {SEASON}, stats={UPDATE_STATS_MODE})...")
-    list_result = rs.scrape(sort="added", band=None, stats_mode=UPDATE_STATS_MODE,
-                            known_ids=known, season=SEASON)
+    # 1) scrape the newest cards. Incremental (default): trust the "added" sort and stop at known cards.
+    #    Full (RENDERZ_FULL=1): re-scan the whole overall band with no early stop so nothing is missed.
+    if FULL:
+        print(f"FULL re-scan (season {SEASON}, overall {FULL_BAND[0]}-{FULL_BAND[1]}, stats={UPDATE_STATS_MODE})...")
+        list_result = rs.scrape(sort="overall", band=FULL_BAND, stats_mode=UPDATE_STATS_MODE,
+                                known_ids=None, season=SEASON)
+    else:
+        print(f"Checking for new cards (season {SEASON}, stats={UPDATE_STATS_MODE})...")
+        list_result = rs.scrape(sort="added", band=None, stats_mode=UPDATE_STATS_MODE,
+                                known_ids=known, season=SEASON)
 
     added = 0
     if list_result:

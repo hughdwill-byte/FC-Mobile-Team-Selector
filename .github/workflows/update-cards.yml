@@ -12,7 +12,12 @@ name: Update card database
 on:
   schedule:
     - cron: "15 1 * * *"     # every day at 01:15 UTC = 11:15 AEST (UTC+10)
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      full:
+        description: "Full re-scan (catch cards the incremental scan missed, incl. 123+ OVR)"
+        type: boolean
+        default: false
 
 permissions:
   contents: write            # needed to commit the refreshed cards.json back
@@ -45,6 +50,8 @@ jobs:
           python -m playwright install --with-deps chromium || true
 
       - name: Update cards from RenderZ and rebuild cards.json
+        env:
+          RENDERZ_FULL: ${{ inputs.full && '1' || '0' }}
         run: python tools/renderz_update.py
 
       - name: Commit changes if any
