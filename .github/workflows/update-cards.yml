@@ -11,7 +11,7 @@ name: Update card database
 
 on:
   schedule:
-    - cron: "30 11 * * *"     # every day at 11:30 UTC
+    - cron: "15 1 * * *"     # every day at 01:15 UTC = 11:15 AEST (UTC+10)
   workflow_dispatch: {}
 
 permissions:

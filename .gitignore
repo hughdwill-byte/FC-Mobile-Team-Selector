@@ -18,3 +18,5 @@ Thumbs.db
 
 # Raw card spreadsheet (has image URLs); only the image-free docs/data/cards.json is published
 *.xlsx
+# ...except the detailed working sheet the daily card-update workflow reads and appends to.
+!renderz_full_24.xlsx

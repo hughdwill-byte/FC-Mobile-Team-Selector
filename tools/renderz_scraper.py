@@ -1,0 +1,484 @@
+"""
+RenderZ -> Excel scraper  (v8)
+==============================
+
+Reads players from RenderZ's rendered cards. Handles:
+  * OVERALL BAND      -- collect only overalls in [MIN_OVERALL, MAX_OVERALL]
+  * NO SKIPPED ROWS   -- gentle, overlapping scroll so no card is missed
+  * DE-DUPLICATION    -- the site lists most cards twice; identical name+overall
+                         +stats within DEDUP_WINDOW rows are dropped
+  * GOALKEEPERS        -- GKs use different stats. With STATS_MODE="both" the
+                         script scrapes outfield players with Player stats, then
+                         switches the site's stats template to Goalkeeper stats
+                         and scrapes the GKs, so each gets the right stat set.
+
+Output columns are dynamic: card_id, player_id, name, overall, position,
+alt_positions, then the player stats (PAC SHO PAS DRI DEF PHY) and/or the GK
+stats (DIV HAN KIC REF SPD POS ...) that were seen, then variant, club_id,
+nation_id, urls.
+
+SETUP:  pip install playwright pandas openpyxl requests pillow
+        playwright install chromium
+RUN:    python renderz_scraper.py            (season 24)
+        python renderz_scraper.py 22         (another season)
+"""
+
+import sys
+import time
+import pathlib
+from collections import deque
+
+import pandas as pd
+from playwright.sync_api import sync_playwright
+
+# ============================ CONFIG (edit me) ===============================
+
+SEASON = sys.argv[1] if len(sys.argv) > 1 else "24"
+
+# Overall band -- the list is sorted high->low, so it starts at the top, keeps
+# cards in [MIN_OVERALL, MAX_OVERALL], and stops once it passes below the min.
+MAX_OVERALL = 122
+MIN_OVERALL = 110
+
+# "player"      -> only outfield players, with Player stats
+# "goalkeeper"  -> only GKs, with Goalkeeper stats
+# "both"        -> outfield with Player stats AND GKs with Goalkeeper stats
+STATS_MODE = "both"
+
+MAX_PLAYERS = None        # optional cap for a quick test (e.g. 300); None = all
+DEDUP_WINDOW = 10         # drop identical name+overall+stats within this many rows
+HEADLESS = True
+
+# =============================================================================
+
+SORT = "overall"          # the update script overrides this to "added"
+BASE = f"https://renderz.app/{SEASON}/players"
+OUT_XLSX = pathlib.Path(f"renderz_players_{SEASON}.xlsx")
+
+# gentle scroll: small steps with heavy overlap so nothing is skipped
+SCROLL_STEP = 220         # px per step (~1.8 rows; rows are ~125px) - small = no skips
+SCROLL_SUBSTEPS = 6       # steps per round
+SCROLL_PAUSE_MS = 280     # wait after each step for rows to render
+MAX_IDLE_ROUNDS = 10      # rounds with no new cards before a sweep is "done"
+MAX_SWEEPS = 8            # repeat full top->bottom sweeps until saturated
+SATURATION_NEW = 3        # stop once a whole sweep adds fewer than this many new cards
+FIRST_LOAD_TIMEOUT = 90
+
+PLAYER_STATS = ["PAC", "SHO", "PAS", "DRI", "DEF", "PHY"]
+GK_STATS = ["DIV", "HAN", "KIC", "REF", "SPD", "POS"]
+
+BLOCK_HOSTS = [
+    "adsrvr.org", "pubmatic.com", "adnxs.com", "id5-sync.com", "crwdcntrl.net",
+    "33across.com", "lngtd.com", "a-mo.net", "a-mx.com", "hadron.ad.gt",
+    "pippio.com", "temu.com", "doubleclick.net", "googlesyndication.com",
+    "amazon-adsystem.com", "criteo.com", "rubiconproject.com", "openx.net",
+    "casalemedia.com", "sharethrough.com", "adform.net", "yieldmo.com",
+    "bidswitch.net", "smartadserver.com", "taboola.com", "outbrain.com",
+    "gumgum.com", "sonobi.com", "media.net", "quantcast.com", "cleverwebserver",
+    "adsboosters", "scorecardresearch.com", "adroll.com", "adsafeprotected.com",
+]
+
+
+def is_blocked(url):
+    u = url.lower()
+    return any(h in u for h in BLOCK_HOSTS)
+
+
+EXTRACT_JS = r"""
+() => {
+  const out = [];
+  const anchors = document.querySelectorAll('a[href*="/player/"]');
+  for (const a of anchors) out.push(__rz_extract(a));
+  return out.filter(Boolean);
+}
+"""
+
+# Injected once per pass. Defines the per-card extractor AND a timer that scans
+# the DOM every 120ms, recording every card the moment it renders into
+# window.__rzCaptured (keyed by card_id). This makes capture independent of
+# Python's scroll/read cadence, so virtualized rows that briefly flash past are
+# still caught -- the fix for players going missing.
+INJECT_JS = r"""
+() => {
+  window.__rz_extract = (a) => {
+    const href = a.href;
+    const cardId = (href.split("/player/")[1] || "").split(/[?#]/)[0];
+    if (!cardId) return null;
+    const actionImg = a.querySelector('img.action-shot, img[src*="/player_"]');
+    const isrc = actionImg ? (actionImg.currentSrc || actionImg.src || "") : "";
+    const pm = isrc.match(/player_\d+_(\d+)_(.+?)_[0-9a-f]{8,}/);
+    const nameEl = a.querySelector("h3") || a.querySelector(".name");
+    const ratingEl = a.querySelector(".rating");
+    const posEl = a.querySelector(".position");
+    const alts = Array.from(a.querySelectorAll(".italic"))
+      .map(e => e.textContent.trim()).filter(Boolean);
+    const stats = {};
+    a.querySelectorAll("span.hyphens-auto").forEach(lab => {
+      const L = lab.textContent.trim();
+      const block = lab.parentElement;
+      if (block) {
+        const num = Array.from(block.querySelectorAll("span"))
+          .map(x => x.textContent.trim()).find(x => /^\d+$/.test(x));
+        if (L && num) stats[L] = num;
+      }
+    });
+    const clubImg = a.querySelector('img.club, img[src*="/club_"]');
+    const clubM = clubImg ? (clubImg.src || "").match(/club_\d+_(\d+)/) : null;
+    const natImg = a.querySelector('img.nation, img[src*="/flags_"]');
+    const natM = natImg ? (natImg.src || "").match(/flags_[\dx_]+_(\d+)/) : null;
+    return {
+      card_id: cardId, player_id: pm ? pm[1] : "",
+      name: nameEl ? nameEl.textContent.trim() : "",
+      overall: ratingEl ? ratingEl.textContent.trim() : "",
+      position: posEl ? posEl.textContent.trim() : "",
+      alt_positions: Array.from(new Set(alts)).join(", "),
+      variant: pm ? pm[2] : "", stats,
+      club_id: clubM ? clubM[1] : "", nation_id: natM ? natM[1] : "",
+      player_url: href, card_image_url: isrc
+    };
+  };
+  window.__rzCaptured = {};
+  window.__rz_scan = () => {
+    document.querySelectorAll('a[href*="/player/"]').forEach(a => {
+      const rec = window.__rz_extract(a);
+      if (!rec) return;
+      const prev = window.__rzCaptured[rec.card_id];
+      // don't let an in-between render with no stats clobber a good record
+      if (prev && Object.keys(rec.stats).length === 0
+              && Object.keys(prev.stats || {}).length > 0) return;
+      window.__rzCaptured[rec.card_id] = rec;
+    });
+  };
+  if (window.__rzTimer) clearInterval(window.__rzTimer);
+  window.__rzTimer = setInterval(window.__rz_scan, 80);
+  window.__rz_scan();
+}
+"""
+
+
+def start_scanner(page):
+    try:
+        page.evaluate(INJECT_JS)   # (re)start + reset capture for this pass
+    except Exception:
+        pass
+
+
+def read_capture(page):
+    try:
+        return list(page.evaluate("() => Object.values(window.__rzCaptured || {})"))
+    except Exception:
+        return []
+
+
+def reset_capture(page):
+    try:
+        page.evaluate("() => { window.__rzCaptured = {}; }")
+    except Exception:
+        pass
+
+
+def process(result, raw, keep_fn, band, ctx, known_ids):
+    for r in raw:
+        cid = r.get("card_id")
+        if not cid:
+            continue
+        ctx["encountered"].add(cid)
+        try:
+            ov = int(str(r.get("overall")).strip())
+        except (TypeError, ValueError):
+            ov = None
+        if band and ov is not None:
+            if ov < band[0]:
+                ctx["stop"] = True
+                continue
+            if ov > band[1]:
+                continue
+            if ctx["lowest"] is None or ov < ctx["lowest"]:
+                ctx["lowest"] = ov
+        if known_ids is not None and cid in known_ids:
+            ctx["known_set"].add(cid)
+            if len(ctx["known_set"]) >= 60:
+                ctx["stop"] = True
+            continue
+        if not keep_fn(r.get("position", "")):
+            continue
+        result[cid] = r   # latest render wins (correct stats for current template)
+
+
+def scroll_round(page, w, h):
+    page.mouse.move(w // 2, h // 2)
+    for _ in range(SCROLL_SUBSTEPS):
+        try:
+            page.evaluate("""(step) => {
+                window.scrollBy(0, step);
+                document.documentElement.scrollTop += step;
+                for (const el of document.querySelectorAll('*')) {
+                    if (el.scrollHeight - el.clientHeight > 200 && el.clientHeight > 150) {
+                        el.scrollTop += step;
+                    }
+                }
+            }""", SCROLL_STEP)
+        except Exception:
+            pass
+        try:
+            page.mouse.wheel(0, SCROLL_STEP)
+        except Exception:
+            pass
+        page.wait_for_timeout(SCROLL_PAUSE_MS)
+
+
+def dismiss_popups(page):
+    for sel in ["button:has-text('Accept')", "button:has-text('I agree')",
+                "button:has-text('Agree')", "button:has-text('Got it')",
+                "[id*='consent'] button", "[class*='cookie'] button"]:
+        try:
+            el = page.query_selector(sel)
+            if el and el.is_visible():
+                el.click(timeout=1000)
+        except Exception:
+            pass
+
+
+def current_labels(page):
+    try:
+        return set(page.evaluate(
+            "() => Array.from(document.querySelectorAll('span.hyphens-auto'))"
+            ".map(e => e.textContent.trim())"))
+    except Exception:
+        return set()
+
+
+def template_is(page, which):
+    labels = current_labels(page)
+    if not labels:
+        return False
+    if which == "goalkeeper":
+        return bool(labels & set(GK_STATS))
+    return bool(labels & set(PLAYER_STATS))
+
+
+def auto_switch(page, which):
+    label = "Goalkeeper stats" if which == "goalkeeper" else "Player stats"
+    for opener in ["button:has-text('Stats')", "text=Stats", ":text('Stats')",
+                   "[aria-label*='stat' i]", "button:has(svg)"]:
+        try:
+            page.click(opener, timeout=2500)
+            page.wait_for_timeout(600)
+            break
+        except Exception:
+            continue
+    for opt in [f"button:has-text('{label}')", f"text={label}",
+                f":text('{label}')", f"*:has-text('{label}')"]:
+        try:
+            page.click(opt, timeout=2500)
+            page.wait_for_timeout(300)
+            break
+        except Exception:
+            continue
+    # commit the change -- the modal needs its Apply button clicked
+    for ap in ["button:has-text('Apply')", "text=Apply", ":text('Apply')"]:
+        try:
+            page.click(ap, timeout=2500)
+            break
+        except Exception:
+            continue
+    page.wait_for_timeout(900)
+
+
+def ensure_template(page, which):
+    """Make the given stats template active. Falls back to a manual prompt."""
+    if template_is(page, which):
+        return True
+    auto_switch(page, which)
+    if template_is(page, which):
+        print(f"  stats template -> {which}")
+        return True
+    want = "Goalkeeper stats" if which == "goalkeeper" else "Player stats"
+    print("\n  >>> Couldn't switch the stats template automatically.")
+    print(f"  >>> In the browser window: click 'Stats' (top-right) and pick '{want}',")
+    print("  >>> then return here and press Enter to continue.")
+    try:
+        input("  >>> Press Enter once it's switched... ")
+    except EOFError:
+        pass
+    ok = template_is(page, which)
+    print(f"  stats template {'->' if ok else 'NOT'} {which}"
+          f"{'' if ok else ' (continuing anyway)'}")
+    return ok
+
+
+def scroll_top(page):
+    try:
+        page.evaluate("""() => {
+            window.scrollTo(0, 0);
+            for (const el of document.querySelectorAll('*')) {
+                if (el.scrollTop) el.scrollTop = 0;
+            }
+        }""")
+    except Exception:
+        pass
+    page.wait_for_timeout(1000)
+
+
+def crawl(page, result, keep_fn, band, known_ids, tag, vw, vh):
+    start_scanner(page)
+
+    # wait for first cards to appear
+    deadline = time.time() + FIRST_LOAD_TIMEOUT
+    while not read_capture(page) and time.time() < deadline:
+        scroll_round(page, vw, vh)
+    if not read_capture(page):
+        print(f"  [{tag}] no cards rendered (cookie box? empty list?)")
+        return
+
+    # Repeat full top->bottom sweeps, unioning into `result`, until a whole
+    # sweep adds almost nothing new. Each sweep resets the in-page capture so a
+    # fresh pass gets fresh render timing -- different sweeps catch different
+    # rows that virtualization skipped, and the union converges to complete.
+    for sweep in range(1, MAX_SWEEPS + 1):
+        reset_capture(page)
+        scroll_top(page)
+        before = len(result)
+        ctx = {"lowest": None, "stop": False, "known_set": set(), "encountered": set()}
+        idle, last, rounds = 0, 0, 0
+        while idle < MAX_IDLE_ROUNDS and not ctx["stop"]:
+            scroll_round(page, vw, vh)
+            process(result, read_capture(page), keep_fn, band, ctx, known_ids)
+            enc = len(ctx["encountered"])
+            idle = idle + 1 if enc == last else 0
+            last = enc
+            rounds += 1
+            if rounds % 5 == 0:
+                print(f"  [{tag}] sweep {sweep}: kept {len(result)}, seen {enc} "
+                      f"this sweep, lowestOVR {ctx['lowest']}")
+            if MAX_PLAYERS and len(result) >= MAX_PLAYERS:
+                break
+        # settle + one more read to catch the last screen
+        page.wait_for_timeout(500)
+        process(result, read_capture(page), keep_fn, band, ctx, known_ids)
+        added = len(result) - before
+        print(f"  [{tag}] sweep {sweep}: +{added} new  (total {len(result)}, "
+              f"lowestOVR {ctx['lowest']})")
+        if MAX_PLAYERS and len(result) >= MAX_PLAYERS:
+            break
+        if added < SATURATION_NEW:
+            print(f"  [{tag}] saturated after {sweep} sweep(s).")
+            break
+    else:
+        print(f"  [{tag}] hit MAX_SWEEPS={MAX_SWEEPS} (raise it if still growing).")
+
+
+def scrape(sort=SORT, band=(MIN_OVERALL, MAX_OVERALL), stats_mode=STATS_MODE,
+           known_ids=None, season=SEASON):
+    """Run the browser crawl and return {card_id: record}."""
+    url = f"https://renderz.app/{season}/players?sortType={sort}&sortDirection=DESC"
+    result = {}
+    p = sync_playwright().start()
+    browser = p.chromium.launch(headless=HEADLESS)
+    page = browser.new_page(viewport={"width": 1400, "height": 900})
+    vw, vh = 1400, 900
+    page.route("**/*", lambda r: r.abort() if is_blocked(r.request.url) else r.continue_())
+    try:
+        print(f"opening {url}")
+        page.goto(url, wait_until="domcontentloaded", timeout=60000)
+        page.wait_for_timeout(2500)
+        dismiss_popups(page)
+
+        # Outfield players use the default (Player stats) template -- no switch
+        # needed. Goalkeepers are done last, with a single switch to GK stats.
+        do_player = stats_mode in ("player", "both")
+        do_gk = stats_mode in ("goalkeeper", "both")
+
+        if do_player:
+            print("pass: player (outfield)")
+            if stats_mode == "player":
+                ensure_template(page, "player")  # make sure GK stats aren't left on
+            crawl(page, result, lambda pos: pos.upper() != "GK",
+                  band, known_ids, "player", vw, vh)
+
+        if do_gk:
+            print("pass: goalkeeper")
+            ensure_template(page, "goalkeeper")
+            scroll_top(page)
+            crawl(page, result, lambda pos: pos.upper() == "GK",
+                  band, known_ids, "goalkeeper", vw, vh)
+    except KeyboardInterrupt:
+        print("\nStopping — keeping what was captured...")
+    finally:
+        try:
+            browser.close()
+        except Exception:
+            pass
+        try:
+            p.stop()
+        except Exception:
+            pass
+    return result
+
+
+def dedup(records):
+    """Drop identical name+overall+stats within DEDUP_WINDOW rows."""
+    out = []
+    window = deque(maxlen=DEDUP_WINDOW)
+    for r in records:
+        stats = r.get("stats", {}) or {}
+        sig = (r.get("name"), str(r.get("overall")),
+               tuple(sorted((k, str(v)) for k, v in stats.items())))
+        if sig in window:
+            continue
+        window.append(sig)
+        out.append(r)
+    return out
+
+
+def to_dataframe(result):
+    records = dedup(list(result.values()))
+    # dynamic stat columns: player stats first, then GK, then any extras
+    seen = set()
+    for r in records:
+        seen.update((r.get("stats") or {}).keys())
+    stat_cols = ([s for s in PLAYER_STATS if s in seen] +
+                 [s for s in GK_STATS if s in seen] +
+                 sorted(seen - set(PLAYER_STATS) - set(GK_STATS)))
+    rows = []
+    for r in records:
+        row = {k: r.get(k) for k in ["card_id", "player_id", "name", "overall",
+                                     "position", "alt_positions"]}
+        st = r.get("stats") or {}
+        for s in stat_cols:
+            row[s] = st.get(s, "")
+        for k in ["variant", "club_id", "nation_id", "player_url", "card_image_url"]:
+            row[k] = r.get(k)
+        rows.append(row)
+    df = pd.DataFrame(rows)
+    for c in ["overall"] + stat_cols:
+        if c in df.columns:
+            df[c] = pd.to_numeric(df[c], errors="coerce")
+    return df
+
+
+def save(result, out_path=OUT_XLSX):
+    if not result:
+        print("Nothing captured.")
+        return None
+    df = to_dataframe(result)
+    try:
+        df.to_excel(out_path, index=False)
+    except PermissionError:
+        alt = out_path.with_name(out_path.stem + "_new.xlsx")
+        df.to_excel(alt, index=False)
+        print(f"(original was open in Excel; wrote {alt} instead)")
+        return df
+    print(f"\nSaved {len(df)} players -> {pathlib.Path(out_path).resolve()}")
+    return df
+
+
+def main():
+    print(f"Season {SEASON} | OVR {MAX_OVERALL}->{MIN_OVERALL} | stats={STATS_MODE}")
+    print(f"(saves to {pathlib.Path.cwd()})")
+    result = scrape()
+    save(result)
+
+
+if __name__ == "__main__":
+    main()
