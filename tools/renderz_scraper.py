@@ -227,16 +227,67 @@ def scroll_round(page, w, h):
         page.wait_for_timeout(SCROLL_PAUSE_MS)
 
 
+def debug_dump(page, tag):
+    """Print what the runner actually sees, so a headless/CI failure is diagnosable from the log."""
+    try:
+        info = page.evaluate(r"""() => {
+          const clickable = Array.from(document.querySelectorAll('button,[role=button],a,summary'))
+            .map(b => (b.innerText || b.textContent || '').trim())
+            .filter(t => t && t.length < 40);
+          const iframes = Array.from(document.querySelectorAll('iframe'))
+            .map(f => f.src || f.title || '').filter(Boolean);
+          return {
+            title: document.title, url: location.href,
+            players: document.querySelectorAll('a[href*="/player/"]').length,
+            bodyLen: (document.body ? document.body.innerText.length : 0),
+            bodyText: (document.body ? document.body.innerText : '').slice(0, 1000),
+            buttons: Array.from(new Set(clickable)).slice(0, 60),
+            iframes: iframes.slice(0, 8),
+          };
+        }""")
+        print(f"  [debug:{tag}] title={info['title']!r} url={info['url']}")
+        print(f"  [debug:{tag}] player anchors={info['players']}  bodyTextLen={info['bodyLen']}")
+        print(f"  [debug:{tag}] iframes={info['iframes']}")
+        print(f"  [debug:{tag}] clickables={info['buttons']}")
+        print(f"  [debug:{tag}] body[:1000]={info['bodyText']!r}")
+    except Exception as e:
+        print(f"  [debug:{tag}] dump failed: {e}")
+
+
+# Common consent buttons across CMPs (OneTrust, Cookiebot, Quantcast, generic). Tried in the page and in
+# any consent iframe, by role/text, since a fresh CI browser hits the wall a stored local profile skips.
+CONSENT_SELECTORS = [
+    "#onetrust-accept-btn-handler", "#accept-recommended-btn-handler",
+    "button#truste-consent-button", ".fc-cta-consent", ".qc-cmp2-summary-buttons button[mode='primary']",
+    "button:has-text('Accept all')", "button:has-text('Accept All')", "button:has-text('Allow all')",
+    "button:has-text('Accept')", "button:has-text('I agree')", "button:has-text('Agree')",
+    "button:has-text('Consent')", "button:has-text('Got it')", "button:has-text('OK')",
+    "[aria-label*='accept' i]", "[id*='consent'] button", "[class*='cookie'] button",
+]
+
+
 def dismiss_popups(page):
-    for sel in ["button:has-text('Accept')", "button:has-text('I agree')",
-                "button:has-text('Agree')", "button:has-text('Got it')",
-                "[id*='consent'] button", "[class*='cookie'] button"]:
+    def try_in(frame):
+        clicked = False
+        for sel in CONSENT_SELECTORS:
+            try:
+                el = frame.query_selector(sel)
+                if el and el.is_visible():
+                    el.click(timeout=1500)
+                    clicked = True
+                    page.wait_for_timeout(400)
+            except Exception:
+                continue
+        return clicked
+    hit = try_in(page)
+    for fr in page.frames:                      # CMPs often render inside an iframe
+        if fr is page.main_frame:
+            continue
         try:
-            el = page.query_selector(sel)
-            if el and el.is_visible():
-                el.click(timeout=1000)
+            hit = try_in(fr) or hit
         except Exception:
-            pass
+            continue
+    return hit
 
 
 def current_labels(page):
@@ -286,14 +337,21 @@ def auto_switch(page, which):
 
 
 def ensure_template(page, which):
-    """Make the given stats template active. Falls back to a manual prompt."""
+    """Make the given stats template active. Falls back to a manual prompt only when interactive."""
     if template_is(page, which):
         return True
-    auto_switch(page, which)
-    if template_is(page, which):
-        print(f"  stats template -> {which}")
-        return True
+    for attempt in range(3):                      # the modal can be flaky; retry the whole open/pick/apply
+        auto_switch(page, which)
+        if template_is(page, which):
+            print(f"  stats template -> {which}")
+            return True
+    # Couldn't switch automatically. Dump what's on screen so the selectors can be fixed from the log.
+    print(f"  couldn't switch stats template to {which} automatically; dumping page state:")
+    debug_dump(page, f"switch-{which}")
     want = "Goalkeeper stats" if which == "goalkeeper" else "Player stats"
+    if not sys.stdin or not sys.stdin.isatty():   # CI/headless: no human to press Enter, don't hang
+        print(f"  (non-interactive run; continuing without the {want} switch)")
+        return False
     print("\n  >>> Couldn't switch the stats template automatically.")
     print(f"  >>> In the browser window: click 'Stats' (top-right) and pick '{want}',")
     print("  >>> then return here and press Enter to continue.")
@@ -328,7 +386,19 @@ def crawl(page, result, keep_fn, band, known_ids, tag, vw, vh):
     while not read_capture(page) and time.time() < deadline:
         scroll_round(page, vw, vh)
     if not read_capture(page):
+        # Nothing rendered yet - most often a consent wall a fresh CI browser hasn't cleared. Try again
+        # to dismiss it, wait, and re-scan before giving up; dump the page state so the log explains why.
+        if dismiss_popups(page):
+            print(f"  [{tag}] dismissed a consent/popup; retrying...")
+        page.wait_for_timeout(2500)
+        start_scanner(page)
+        retry_deadline = time.time() + 30
+        while not read_capture(page) and time.time() < retry_deadline:
+            scroll_round(page, vw, vh)
+
+    if not read_capture(page):
         print(f"  [{tag}] no cards rendered (cookie box? empty list?)")
+        debug_dump(page, tag)
         return
 
     # Repeat full top->bottom sweeps, unioning into `result`, until a whole
@@ -374,15 +444,24 @@ def scrape(sort=SORT, band=(MIN_OVERALL, MAX_OVERALL), stats_mode=STATS_MODE,
     url = f"https://renderz.app/{season}/players?sortType={sort}&sortDirection=DESC"
     result = {}
     p = sync_playwright().start()
-    browser = p.chromium.launch(headless=HEADLESS)
-    page = browser.new_page(viewport={"width": 1400, "height": 900})
+    browser = p.chromium.launch(headless=HEADLESS, args=["--disable-blink-features=AutomationControlled"])
+    # A realistic desktop UA + locale; headless Chromium's default UA is a common bot-block trigger, which
+    # is why a fresh CI browser can render nothing where a normal machine works.
+    ctx = browser.new_context(
+        viewport={"width": 1400, "height": 900}, locale="en-GB",
+        user_agent=("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                    "(KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"),
+    )
+    page = ctx.new_page()
     vw, vh = 1400, 900
     page.route("**/*", lambda r: r.abort() if is_blocked(r.request.url) else r.continue_())
     try:
         print(f"opening {url}")
         page.goto(url, wait_until="domcontentloaded", timeout=60000)
-        page.wait_for_timeout(2500)
-        dismiss_popups(page)
+        page.wait_for_timeout(3000)
+        if dismiss_popups(page):
+            print("  dismissed a consent/cookie dialog")
+        page.wait_for_timeout(1000)
 
         # Outfield players use the default (Player stats) template -- no switch
         # needed. Goalkeepers are done last, with a single switch to GK stats.
