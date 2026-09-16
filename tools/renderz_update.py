@@ -67,9 +67,12 @@ FULL_BAND = (int(os.environ.get("RENDERZ_MIN", "100")), int(os.environ.get("REND
 
 def rebuild_site_cards():
     """Regenerate docs/data/cards.json from the (updated) spreadsheet, using the site's own builder."""
+    import os
     data = build_cards.build(XLSX)
     CARDS_JSON.parent.mkdir(parents=True, exist_ok=True)
-    CARDS_JSON.write_text(json.dumps(data, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
+    tmp = CARDS_JSON.with_suffix(".json.tmp")     # atomic write so an interrupt can't leave a half file
+    tmp.write_text(json.dumps(data, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
+    os.replace(tmp, CARDS_JSON)
     kb = CARDS_JSON.stat().st_size / 1024
     print(f"Rebuilt page cards -> {CARDS_JSON.relative_to(ROOT)}  ({data['count']} cards, {kb:.0f} KB)")
 
@@ -83,7 +86,14 @@ def main():
     rs.HEADLESS = HEADLESS
     rd.HEADLESS = HEADLESS
 
-    existing = pd.read_excel(XLSX)
+    try:
+        existing = pd.read_excel(XLSX)
+    except Exception as e:
+        print(f"\nCouldn't read {XLSX.name}: {e}")
+        print("The spreadsheet looks corrupted (often from a run that was interrupted mid-save).")
+        print("Restore the good copy from git and run again:")
+        print(f"    git restore {XLSX.name}")
+        sys.exit(1)
     existing["card_id"] = existing["card_id"].astype(str)
     known = set(existing["card_id"])
     has_details = any(str(c).startswith("attr_") for c in existing.columns)
@@ -125,10 +135,14 @@ def main():
                     det["card_id"] = det["card_id"].astype(str)
                     new_full = new_base.merge(det, on="card_id", how="left", suffixes=("", "_detail"))
 
-            # 3) append and save the spreadsheet (the persistent working store)
+            # 3) append and save the spreadsheet (the persistent working store). Write to a temp file and
+            #    replace, so a run that's interrupted mid-save can never corrupt the real sheet.
             merged = pd.concat([existing, new_full], ignore_index=True)
             merged = merged.drop_duplicates(subset=["card_id"], keep="first")
-            merged.to_excel(XLSX, index=False)
+            tmp = XLSX.with_suffix(".xlsx.tmp")
+            merged.to_excel(tmp, index=False)
+            import os
+            os.replace(tmp, XLSX)
             added = len(new_full)
             print(f"Added {added} new card(s) to {XLSX.name}. Total now {len(merged)}.")
             for _, r in new_full.head(25).iterrows():

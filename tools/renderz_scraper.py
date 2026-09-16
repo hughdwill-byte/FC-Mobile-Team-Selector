@@ -309,38 +309,29 @@ def template_is(page, which):
 
 
 def auto_switch(page, which):
-    label = "Goalkeeper stats" if which == "goalkeeper" else "Player stats"
-    # RenderZ's stats/columns switcher has moved around; try every known opener.
-    for opener in ["button:has-text('Columns')", "button:has-text('Stats')", "button:has-text('OVR')",
-                   "text=Columns", "text=Stats", ":text('Stats')",
-                   "[aria-label*='stat' i]", "[aria-label*='column' i]", "button:has(svg)"]:
+    """RenderZ redesign: the stat set is chosen from the 'Columns' panel
+    ('Choose the stats shown in the table' -> Player stats / Goalkeeper stats)."""
+    target = "Goalkeeper stats" if which == "goalkeeper" else "Player stats"
+    for opener in ["button:has-text('Columns')", "text=Columns",
+                   "[aria-label*='column' i]", "button:has-text('Stats')"]:
         try:
-            page.click(opener, timeout=2000)
+            page.click(opener, timeout=2500)
+            page.wait_for_timeout(700)
+            break
+        except Exception:
+            continue
+    for sel in [f"button:has-text('{target}')", f"text={target}", f":text('{target}')"]:
+        try:
+            page.click(sel, timeout=2500)
             page.wait_for_timeout(600)
             break
         except Exception:
             continue
-    # Pick the goalkeeper option under whatever menu opened (wording varies).
-    opts = ([f"button:has-text('{label}')", f"text={label}", f":text('{label}')",
-             "text=Goalkeeper stats", "text=Goalkeeper", "text=Goalkeeping", ":text('Goalkeeper')"]
-            if which == "goalkeeper" else
-            [f"button:has-text('{label}')", f"text={label}", "text=Player stats", "text=Outfield"])
-    for opt in opts:
-        try:
-            page.click(opt, timeout=2000)
-            page.wait_for_timeout(300)
-            break
-        except Exception:
-            continue
-    # commit the change -- the modal may need Apply / Done / Save
-    for ap in ["button:has-text('Apply')", "button:has-text('Done')", "button:has-text('Save')",
-               "text=Apply", "text=Done"]:
-        try:
-            page.click(ap, timeout=1500)
-            break
-        except Exception:
-            continue
-    page.wait_for_timeout(900)
+    try:                                            # close the panel so it doesn't cover the table
+        page.keyboard.press("Escape")
+    except Exception:
+        pass
+    page.wait_for_timeout(500)
 
 
 def debug_stats_controls(page):
@@ -452,49 +443,104 @@ def crawl(page, result, keep_fn, band, known_ids, tag, vw, vh):
         print(f"  [{tag}] hit MAX_SWEEPS={MAX_SWEEPS} (raise it if still growing).")
 
 
+def read_anchors(page):
+    """Extract every player card currently on the page (RenderZ is now paginated, not infinite-scroll)."""
+    try:
+        page.evaluate(INJECT_JS)          # (re)define the per-card extractor after each navigation
+    except Exception:
+        pass
+    try:
+        return page.evaluate(EXTRACT_JS) or []
+    except Exception:
+        return []
+
+
+MAX_PAGES = 500                            # safety cap; real stops are the OVR band / known cards / empty page
+
+
+def crawl_paged(page, result, keep_fn, band, known_ids, tag, base_url, which):
+    """Walk RenderZ page by page (?page=N), extracting cards until the OVR band is exhausted, we run into
+    known cards (incremental), or a page comes back empty. Re-asserts the stats template each page in case a
+    navigation reset it back to Player stats."""
+    ctx = {"lowest": None, "stop": False, "known_set": set(), "encountered": set()}
+    empty = 0
+    for pnum in range(1, MAX_PAGES + 1):
+        try:
+            page.goto(f"{base_url}&page={pnum}", wait_until="domcontentloaded", timeout=60000)
+        except Exception as e:
+            print(f"  [{tag}] page {pnum} load error: {e}")
+            break
+        page.wait_for_timeout(800)
+        dismiss_popups(page)
+        if which == "goalkeeper" and not template_is(page, "goalkeeper"):
+            auto_switch(page, "goalkeeper")       # nav can reset the table to Player stats
+        # wait for cards to render
+        cards, deadline = [], time.time() + 25
+        while time.time() < deadline:
+            cards = read_anchors(page)
+            if cards:
+                break
+            page.wait_for_timeout(600)
+        if not cards:
+            empty += 1
+            print(f"  [{tag}] page {pnum}: 0 cards")
+            if empty >= 2:
+                print(f"  [{tag}] two empty pages - assuming end of list.")
+                break
+            continue
+        empty = 0
+        before = len(result)
+        process(result, cards, keep_fn, band, ctx, known_ids)
+        print(f"  [{tag}] page {pnum}: +{len(result) - before} kept "
+              f"(total {len(result)}, seen {len(cards)}, lowestOVR {ctx['lowest']})")
+        if ctx["stop"]:
+            print(f"  [{tag}] stop condition reached on page {pnum}.")
+            break
+        if MAX_PLAYERS and len(result) >= MAX_PLAYERS:
+            break
+
+
 def scrape(sort=SORT, band=(MIN_OVERALL, MAX_OVERALL), stats_mode=STATS_MODE,
            known_ids=None, season=SEASON):
-    """Run the browser crawl and return {card_id: record}."""
-    url = f"https://renderz.app/{season}/players?sortType={sort}&sortDirection=DESC"
+    """Run the browser crawl and return {card_id: record}. RenderZ dropped the /season/ path segment and
+    switched to pagination, so we hit /players?...&page=N and turn pages instead of scrolling."""
+    base_url = f"https://renderz.app/players?sortType={sort}&sortDirection=DESC"
     result = {}
     p = sync_playwright().start()
     browser = p.chromium.launch(headless=HEADLESS, args=["--disable-blink-features=AutomationControlled"])
-    # A realistic desktop UA + locale; headless Chromium's default UA is a common bot-block trigger, which
-    # is why a fresh CI browser can render nothing where a normal machine works.
+    # A realistic desktop UA + locale; headless Chromium's default UA is a common bot-block trigger.
     ctx = browser.new_context(
         viewport={"width": 1400, "height": 900}, locale="en-GB",
         user_agent=("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
                     "(KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"),
     )
     page = ctx.new_page()
-    vw, vh = 1400, 900
     page.route("**/*", lambda r: r.abort() if is_blocked(r.request.url) else r.continue_())
     try:
-        print(f"opening {url}")
-        page.goto(url, wait_until="domcontentloaded", timeout=60000)
+        print(f"opening {base_url}")
+        page.goto(f"{base_url}&page=1", wait_until="domcontentloaded", timeout=60000)
         page.wait_for_timeout(3000)
         if dismiss_popups(page):
             print("  dismissed a consent/cookie dialog")
         page.wait_for_timeout(1000)
 
-        # Outfield players use the default (Player stats) template -- no switch
-        # needed. Goalkeepers are done last, with a single switch to GK stats.
         do_player = stats_mode in ("player", "both")
         do_gk = stats_mode in ("goalkeeper", "both")
 
         if do_player:
             print("pass: player (outfield)")
-            if stats_mode == "player":
-                ensure_template(page, "player")  # make sure GK stats aren't left on
-            crawl(page, result, lambda pos: pos.upper() != "GK",
-                  band, known_ids, "player", vw, vh)
+            ensure_template(page, "player")       # make sure GK columns aren't left on from a prior state
+            crawl_paged(page, result, lambda pos: pos.upper() != "GK",
+                        band, known_ids, "player", base_url, "player")
 
         if do_gk:
             print("pass: goalkeeper")
+            page.goto(f"{base_url}&page=1", wait_until="domcontentloaded", timeout=60000)
+            page.wait_for_timeout(1500)
+            dismiss_popups(page)
             if ensure_template(page, "goalkeeper"):
-                scroll_top(page)
-                crawl(page, result, lambda pos: pos.upper() == "GK",
-                      band, known_ids, "goalkeeper", vw, vh)
+                crawl_paged(page, result, lambda pos: pos.upper() == "GK",
+                            band, known_ids, "goalkeeper", base_url, "goalkeeper")
             else:
                 print("  skipped goalkeeper pass (couldn't switch to GK stats) - outfield still updated")
     except KeyboardInterrupt:
