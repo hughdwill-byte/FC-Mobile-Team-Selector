@@ -1,21 +1,18 @@
 name: Update card database
 
-# Scrapes the newest RenderZ cards once a day, appends them to the working spreadsheet, and rebuilds
-# docs/data/cards.json (what the site reads) - then commits the result. Also runnable on demand.
-#
-# REQUIRES these to be committed to the repo for the scrape to run (they live on your computer today):
-#   tools/renderz_scraper.py     tools/renderz_details.py     (your scraper modules)
-#   renderz_full_24.xlsx         (your DETAILED sheet - keeps skills / rank-up positions / playstyles;
-#                                 without it the basic sheet is used and those are dropped)
-# If a tools/requirements-scraper.txt exists it is installed; otherwise a sensible default set is used.
+# NOTE: RenderZ blocks GitHub's datacenter IPs (it returns an "Unauthorised" page to the runner), so the
+# SCRAPE cannot run here - it must run from a normal home connection. The daily update therefore runs on
+# your PC via tools/update_cards.bat + Task Scheduler (see SETUP_LOCAL_UPDATE.md). The schedule below is
+# intentionally disabled; this workflow is kept only for manual runs that rebuild cards.json from an
+# already-committed spreadsheet (the rebuild works in the cloud; only the scrape is blocked).
 
 on:
-  schedule:
-    - cron: "15 1 * * *"     # every day at 01:15 UTC = 11:15 AEST (UTC+10)
+  # schedule:                 # disabled - RenderZ returns "Unauthorised" to GitHub's IPs, so a cloud scrape finds nothing
+  #   - cron: "15 1 * * *"
   workflow_dispatch:
     inputs:
       full:
-        description: "Full re-scan (catch cards the incremental scan missed, incl. 123+ OVR)"
+        description: "Full re-scan (only useful locally; RenderZ blocks the cloud runner)"
         type: boolean
         default: false
 
