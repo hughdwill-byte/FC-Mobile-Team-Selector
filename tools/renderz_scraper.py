@@ -310,34 +310,61 @@ def template_is(page, which):
 
 def auto_switch(page, which):
     label = "Goalkeeper stats" if which == "goalkeeper" else "Player stats"
-    for opener in ["button:has-text('Stats')", "text=Stats", ":text('Stats')",
-                   "[aria-label*='stat' i]", "button:has(svg)"]:
+    # RenderZ's stats/columns switcher has moved around; try every known opener.
+    for opener in ["button:has-text('Columns')", "button:has-text('Stats')", "button:has-text('OVR')",
+                   "text=Columns", "text=Stats", ":text('Stats')",
+                   "[aria-label*='stat' i]", "[aria-label*='column' i]", "button:has(svg)"]:
         try:
-            page.click(opener, timeout=2500)
+            page.click(opener, timeout=2000)
             page.wait_for_timeout(600)
             break
         except Exception:
             continue
-    for opt in [f"button:has-text('{label}')", f"text={label}",
-                f":text('{label}')", f"*:has-text('{label}')"]:
+    # Pick the goalkeeper option under whatever menu opened (wording varies).
+    opts = ([f"button:has-text('{label}')", f"text={label}", f":text('{label}')",
+             "text=Goalkeeper stats", "text=Goalkeeper", "text=Goalkeeping", ":text('Goalkeeper')"]
+            if which == "goalkeeper" else
+            [f"button:has-text('{label}')", f"text={label}", "text=Player stats", "text=Outfield"])
+    for opt in opts:
         try:
-            page.click(opt, timeout=2500)
+            page.click(opt, timeout=2000)
             page.wait_for_timeout(300)
             break
         except Exception:
             continue
-    # commit the change -- the modal needs its Apply button clicked
-    for ap in ["button:has-text('Apply')", "text=Apply", ":text('Apply')"]:
+    # commit the change -- the modal may need Apply / Done / Save
+    for ap in ["button:has-text('Apply')", "button:has-text('Done')", "button:has-text('Save')",
+               "text=Apply", "text=Done"]:
         try:
-            page.click(ap, timeout=2500)
+            page.click(ap, timeout=1500)
             break
         except Exception:
             continue
     page.wait_for_timeout(900)
 
 
+def debug_stats_controls(page):
+    """Open the likely stat/column menus and dump what appears, so the goalkeeper toggle can be identified."""
+    for name in ["Columns", "OVR", "Stats"]:
+        try:
+            el = page.query_selector(f"button:has-text('{name}')")
+            if not (el and el.is_visible()):
+                continue
+            el.click(timeout=2000)
+            page.wait_for_timeout(800)
+            debug_dump(page, f"menu-{name}")
+            try:
+                page.keyboard.press("Escape")
+            except Exception:
+                pass
+            page.wait_for_timeout(300)
+        except Exception as e:
+            print(f"  [debug] opening '{name}' menu failed: {e}")
+
+
 def ensure_template(page, which):
-    """Make the given stats template active. Falls back to a manual prompt only when interactive."""
+    """Make the given stats template active. Never blocks: if it can't switch, it dumps the menus and
+    returns False so the caller can skip that pass rather than hang or scrape with the wrong stats."""
     if template_is(page, which):
         return True
     for attempt in range(3):                      # the modal can be flaky; retry the whole open/pick/apply
@@ -345,24 +372,11 @@ def ensure_template(page, which):
         if template_is(page, which):
             print(f"  stats template -> {which}")
             return True
-    # Couldn't switch automatically. Dump what's on screen so the selectors can be fixed from the log.
-    print(f"  couldn't switch stats template to {which} automatically; dumping page state:")
+    print(f"  couldn't switch stats template to {which}; dumping the stat/column menus for diagnosis:")
     debug_dump(page, f"switch-{which}")
-    want = "Goalkeeper stats" if which == "goalkeeper" else "Player stats"
-    if not sys.stdin or not sys.stdin.isatty():   # CI/headless: no human to press Enter, don't hang
-        print(f"  (non-interactive run; continuing without the {want} switch)")
-        return False
-    print("\n  >>> Couldn't switch the stats template automatically.")
-    print(f"  >>> In the browser window: click 'Stats' (top-right) and pick '{want}',")
-    print("  >>> then return here and press Enter to continue.")
-    try:
-        input("  >>> Press Enter once it's switched... ")
-    except EOFError:
-        pass
-    ok = template_is(page, which)
-    print(f"  stats template {'->' if ok else 'NOT'} {which}"
-          f"{'' if ok else ' (continuing anyway)'}")
-    return ok
+    debug_stats_controls(page)
+    print(f"  (skipping the {which} pass this run - no manual prompt)")
+    return False
 
 
 def scroll_top(page):
@@ -477,10 +491,12 @@ def scrape(sort=SORT, band=(MIN_OVERALL, MAX_OVERALL), stats_mode=STATS_MODE,
 
         if do_gk:
             print("pass: goalkeeper")
-            ensure_template(page, "goalkeeper")
-            scroll_top(page)
-            crawl(page, result, lambda pos: pos.upper() == "GK",
-                  band, known_ids, "goalkeeper", vw, vh)
+            if ensure_template(page, "goalkeeper"):
+                scroll_top(page)
+                crawl(page, result, lambda pos: pos.upper() == "GK",
+                      band, known_ids, "goalkeeper", vw, vh)
+            else:
+                print("  skipped goalkeeper pass (couldn't switch to GK stats) - outfield still updated")
     except KeyboardInterrupt:
         print("\nStopping — keeping what was captured...")
     finally:
