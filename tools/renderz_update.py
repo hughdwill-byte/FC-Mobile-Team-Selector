@@ -123,6 +123,16 @@ def main():
             new_ids = list(dict.fromkeys(new_base["card_id"].tolist()))
             print(f"{len(new_ids)} new card(s) found.")
 
+            # Sanity guard: an incremental run should surface a handful of new cards, not thousands. A huge
+            # number means card-id matching is broken (e.g. a site redesign changed the ids), so bail out
+            # rather than spend an hour scraping detail pages for garbage.
+            if not FULL and len(new_ids) > 800:
+                print(f"\n*** Refusing to enrich {len(new_ids)} 'new' cards - that's far too many for an "
+                      "incremental run and means the site's card ids no longer match the sheet.")
+                print("*** Nothing was changed. This needs a scraper fix (the RenderZ redesign) before it "
+                      "can update correctly.")
+                sys.exit(2)
+
             # 2) if the sheet has detail columns, fetch full details for the new cards
             new_full = new_base
             if has_details:
