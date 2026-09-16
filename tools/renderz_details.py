@@ -155,7 +155,7 @@ def is_complete(row):
 
 
 async def enrich_one(page, card_id, dump_sample=False):
-    url = f"https://renderz.app/{SEASON}/player/{card_id}"
+    url = f"https://renderz.app/player/{card_id}"   # redesign dropped the /season/ segment; numeric id redirects
     resp = await page.goto(url, wait_until="domcontentloaded", timeout=45000)
     try:
         ssr_html = await resp.text() if resp else ""

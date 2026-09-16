@@ -65,7 +65,8 @@ SATURATION_NEW = 3        # stop once a whole sweep adds fewer than this many ne
 FIRST_LOAD_TIMEOUT = 90
 
 PLAYER_STATS = ["PAC", "SHO", "PAS", "DRI", "DEF", "PHY"]
-GK_STATS = ["DIV", "HAN", "KIC", "REF", "SPD", "POS"]
+# GK columns after normalising the site's new codes (GKD/GKK/GKP + REF/HAN) to the sheet's names.
+GK_STATS = ["DIV", "HAN", "KIC", "REF", "POS"]
 
 BLOCK_HOSTS = [
     "adsrvr.org", "pubmatic.com", "adnxs.com", "id5-sync.com", "crwdcntrl.net",
@@ -100,39 +101,48 @@ EXTRACT_JS = r"""
 # still caught -- the fix for players going missing.
 INJECT_JS = r"""
 () => {
+  const POS = new Set(["GK","RB","LB","CB","RWB","LWB","CDM","CM","CAM","RM","LM","RW","LW","CF","ST","RF","LF"]);
+  // New GK column codes -> the sheet's expected GK column names (so build_cards keeps working).
+  const GKMAP = {GKD:"DIV", GKK:"KIC", GKP:"POS"};   // HAN, REF stay as-is
   window.__rz_extract = (a) => {
-    const href = a.href;
-    const cardId = (href.split("/player/")[1] || "").split(/[?#]/)[0];
-    if (!cardId) return null;
+    const href = a.getAttribute("href") || a.href || "";
+    const m = href.match(/\/player\/(\d+)/);          // numeric id only (the URL now has a -name slug)
+    if (!m) return null;
+    const cardId = m[1];
+    const name = (a.getAttribute("aria-label") || "").trim();
+    // Six stat cells: each is a <div> holding a value <span> and a label <span> (e.g. "150" + "PAC").
+    const stats = {};
+    a.querySelectorAll("div").forEach(d => {
+      const spans = d.querySelectorAll(":scope > span");
+      if (spans.length === 2) {
+        const val = (spans[0].textContent || "").trim();
+        let lab = (spans[1].textContent || "").trim();
+        if (/^\d{1,3}$/.test(val) && /^[A-Z]{2,4}$/.test(lab)) { lab = GKMAP[lab] || lab; stats[lab] = val; }
+      }
+    });
+    // OVR + main position live in the card-image overlay ("122 CM ...").
+    const cardDiv = a.querySelector("[data-player-card]");
+    const overlay = cardDiv ? (cardDiv.innerText || cardDiv.textContent || "") : "";
+    const om = overlay.match(/\d{2,3}/);
+    const overall = om ? om[0] : "";
+    // position: first span in the row whose text is a known position code.
+    let position = "";
+    for (const sp of a.querySelectorAll("span")) {
+      const t = (sp.textContent || "").trim().toUpperCase();
+      if (POS.has(t)) { position = t; break; }
+    }
+    // variant + player_id from the action-shot image url.
     const actionImg = a.querySelector('img.action-shot, img[src*="/player_"]');
     const isrc = actionImg ? (actionImg.currentSrc || actionImg.src || "") : "";
     const pm = isrc.match(/player_\d+_(\d+)_(.+?)_[0-9a-f]{8,}/);
-    const nameEl = a.querySelector("h3") || a.querySelector(".name");
-    const ratingEl = a.querySelector(".rating");
-    const posEl = a.querySelector(".position");
-    const alts = Array.from(a.querySelectorAll(".italic"))
-      .map(e => e.textContent.trim()).filter(Boolean);
-    const stats = {};
-    a.querySelectorAll("span.hyphens-auto").forEach(lab => {
-      const L = lab.textContent.trim();
-      const block = lab.parentElement;
-      if (block) {
-        const num = Array.from(block.querySelectorAll("span"))
-          .map(x => x.textContent.trim()).find(x => /^\d+$/.test(x));
-        if (L && num) stats[L] = num;
-      }
-    });
     const clubImg = a.querySelector('img.club, img[src*="/club_"]');
     const clubM = clubImg ? (clubImg.src || "").match(/club_\d+_(\d+)/) : null;
     const natImg = a.querySelector('img.nation, img[src*="/flags_"]');
     const natM = natImg ? (natImg.src || "").match(/flags_[\dx_]+_(\d+)/) : null;
     return {
       card_id: cardId, player_id: pm ? pm[1] : "",
-      name: nameEl ? nameEl.textContent.trim() : "",
-      overall: ratingEl ? ratingEl.textContent.trim() : "",
-      position: posEl ? posEl.textContent.trim() : "",
-      alt_positions: Array.from(new Set(alts)).join(", "),
-      variant: pm ? pm[2] : "", stats,
+      name, overall, position, alt_positions: "",
+      variant: pm ? pm[2].replace(/_/g, " ") : "", stats,
       club_id: clubM ? clubM[1] : "", nation_id: natM ? natM[1] : "",
       player_url: href, card_image_url: isrc
     };
@@ -143,7 +153,6 @@ INJECT_JS = r"""
       const rec = window.__rz_extract(a);
       if (!rec) return;
       const prev = window.__rzCaptured[rec.card_id];
-      // don't let an in-between render with no stats clobber a good record
       if (prev && Object.keys(rec.stats).length === 0
               && Object.keys(prev.stats || {}).length > 0) return;
       window.__rzCaptured[rec.card_id] = rec;
@@ -292,9 +301,14 @@ def dismiss_popups(page):
 
 def current_labels(page):
     try:
-        return set(page.evaluate(
-            "() => Array.from(document.querySelectorAll('span.hyphens-auto'))"
-            ".map(e => e.textContent.trim())"))
+        return set(page.evaluate(r"""() => {
+          const codes = new Set();
+          document.querySelectorAll('span,button').forEach(e => {
+            const t = (e.textContent || '').trim();
+            if (/^(PAC|SHO|PAS|DRI|DEF|PHY|GKD|GKK|GKP|GKR|REF|HAN)$/.test(t)) codes.add(t);
+          });
+          return [...codes];
+        }"""))
     except Exception:
         return set()
 
@@ -304,8 +318,8 @@ def template_is(page, which):
     if not labels:
         return False
     if which == "goalkeeper":
-        return bool(labels & set(GK_STATS))
-    return bool(labels & set(PLAYER_STATS))
+        return bool(labels & {"GKD", "GKK", "GKP", "GKR"})   # GK-only column codes
+    return "PAC" in labels
 
 
 def auto_switch(page, which):
