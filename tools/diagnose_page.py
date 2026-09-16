@@ -30,35 +30,22 @@ def main():
     page.wait_for_timeout(1500)
 
     dump = page.evaluate(r"""() => {
-      const out = {};
-      const firstAnchor = document.querySelector('a[href*="/player/"]');
-      out.firstAnchorHref = firstAnchor ? firstAnchor.getAttribute('href') : null;
-      // Walk up from the first player anchor to the row container (has several numeric cells).
-      let row = firstAnchor;
-      for (let i = 0; i < 8 && row; i++) {
-        const nums = row.querySelectorAll ? Array.from(row.querySelectorAll('*'))
-          .filter(n => /^\d{1,3}$/.test((n.textContent || '').trim())) : [];
-        if (nums.length >= 5) break;
-        row = row.parentElement;
-      }
-      out.rowHTML = row ? row.outerHTML.slice(0, 2500) : null;
-      out.rowParentHTML = (row && row.parentElement) ? row.parentElement.outerHTML.slice(0, 3500) : null;
-      // A table header, if present.
-      const header = document.querySelector('thead') || document.querySelector('[role="row"]');
-      out.headerHTML = header ? header.outerHTML.slice(0, 1500) : null;
-      // Pagination controls.
-      const nextBtn = Array.from(document.querySelectorAll('a,button'))
-        .find(b => /next/i.test((b.textContent || '')));
-      out.nextHTML = nextBtn ? nextBtn.outerHTML.slice(0, 500) : null;
-      out.tables = document.querySelectorAll('table').length;
-      return out;
+      const a = document.querySelector('a[href*="/player/"]');
+      if (!a) return {none: true};
+      // Strip the big player-card image block so the stat data-cells are visible.
+      const clone = a.cloneNode(true);
+      clone.querySelectorAll('[data-player-card]').forEach(n => n.remove());
+      return {
+        href: a.getAttribute('href'),
+        ariaLabel: a.getAttribute('aria-label'),
+        innerTextLines: (a.innerText || '').split('\n').map(s => s.trim()).filter(Boolean).slice(0, 50),
+        strippedRowHTML: clone.outerHTML.slice(0, 4000),
+      };
     }""")
-    print("=== firstAnchorHref ===\n", dump.get("firstAnchorHref"))
-    print("=== tables on page ===", dump.get("tables"))
-    print("=== headerHTML ===\n", dump.get("headerHTML"))
-    print("=== rowHTML (first player row) ===\n", dump.get("rowHTML"))
-    print("=== rowParentHTML ===\n", dump.get("rowParentHTML"))
-    print("=== nextHTML ===\n", dump.get("nextHTML"))
+    print("=== href ===\n", dump.get("href"))
+    print("=== aria-label ===\n", dump.get("ariaLabel"))
+    print("=== innerText lines (in order) ===\n", dump.get("innerTextLines"))
+    print("=== row HTML with card image stripped (shows the stat cells) ===\n", dump.get("strippedRowHTML"))
     browser.close()
     p.stop()
 
