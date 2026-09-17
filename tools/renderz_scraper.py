@@ -469,60 +469,76 @@ def read_anchors(page):
         return []
 
 
-MAX_PAGES = 500                            # safety cap; real stops are the OVR band / known cards / empty page
+MAX_LOADS = 800                           # safety cap on "Load more" clicks; real stops = known cards / end
 
 
-def crawl_paged(page, result, keep_fn, band, known_ids, tag, base_url, which):
-    """Walk RenderZ page by page (?page=N), extracting cards until the OVR band is exhausted, we run into
-    known cards (incremental), or a page comes back empty. Re-asserts the stats template each page in case a
-    navigation reset it back to Player stats."""
-    ctx = {"lowest": None, "stop": False, "known_set": set(), "encountered": set()}
-    empty = 0
-    for pnum in range(1, MAX_PAGES + 1):
+def click_load_more(page):
+    for sel in ["button:has-text('Load more')", "button:has-text('Load More')", "text=Load more"]:
         try:
-            page.goto(f"{base_url}&page={pnum}", wait_until="domcontentloaded", timeout=60000)
-        except Exception as e:
-            print(f"  [{tag}] page {pnum} load error: {e}")
-            break
-        page.wait_for_timeout(800)
-        dismiss_popups(page)
-        if which == "goalkeeper" and not template_is(page, "goalkeeper"):
-            auto_switch(page, "goalkeeper")       # nav can reset the table to Player stats
-        # wait for cards to render
-        cards, deadline = [], time.time() + 25
-        while time.time() < deadline:
-            cards = read_anchors(page)
-            if cards:
-                break
-            page.wait_for_timeout(600)
-        if not cards:
-            empty += 1
-            print(f"  [{tag}] page {pnum}: 0 cards")
-            if empty >= 2:
-                print(f"  [{tag}] two empty pages - assuming end of list.")
-                break
+            btn = page.query_selector(sel)
+            if btn and btn.is_visible():
+                try:
+                    btn.scroll_into_view_if_needed(timeout=2000)
+                except Exception:
+                    pass
+                btn.click(timeout=3000)
+                return True
+        except Exception:
             continue
-        empty = 0
+    return False
+
+
+def crawl_loadmore(page, result, keep_fn, band, known_ids, tag):
+    """RenderZ's ?sort=new view loads ~24 rows at a time behind a 'Load more' button. Read what's shown,
+    click Load more, repeat - until we hit known cards (incremental), the OVR band runs out, or there's no
+    more button. The stats template set before this runs stays put (no navigation resets it)."""
+    ctx = {"lowest": None, "stop": False, "known_set": set(), "encountered": set()}
+    deadline = time.time() + 30                       # wait for the first rows
+    while not read_anchors(page) and time.time() < deadline:
+        page.wait_for_timeout(700)
+        dismiss_popups(page)
+    if not read_anchors(page):
+        print(f"  [{tag}] no cards rendered")
+        debug_dump(page, tag)
+        return
+    stall = 0
+    for i in range(MAX_LOADS):
+        cards = read_anchors(page)
+        shown = len(cards)
         before = len(result)
         process(result, cards, keep_fn, band, ctx, known_ids)
-        print(f"  [{tag}] page {pnum}: +{len(result) - before} kept "
-              f"(total {len(result)}, seen {len(cards)}, lowestOVR {ctx['lowest']})")
+        print(f"  [{tag}] {shown} rows shown: +{len(result) - before} kept "
+              f"(total {len(result)}, known {len(ctx['known_set'])}, lowestOVR {ctx['lowest']})")
         if ctx["stop"]:
-            print(f"  [{tag}] stop condition reached on page {pnum}.")
+            print(f"  [{tag}] stop condition reached.")
             break
         if MAX_PLAYERS and len(result) >= MAX_PLAYERS:
             break
+        if not click_load_more(page):
+            print(f"  [{tag}] no 'Load more' button - reached the end.")
+            break
+        grow_deadline = time.time() + 15                # wait for the list to grow after the click
+        while time.time() < grow_deadline:
+            page.wait_for_timeout(700)
+            if len(read_anchors(page)) > shown:
+                break
+        if len(read_anchors(page)) <= shown:
+            stall += 1
+            if stall >= 2:
+                print(f"  [{tag}] list stopped growing - reached the end.")
+                break
+        else:
+            stall = 0
 
 
 def scrape(sort=SORT, band=(MIN_OVERALL, MAX_OVERALL), stats_mode=STATS_MODE,
            known_ids=None, season=SEASON):
-    """Run the browser crawl and return {card_id: record}. RenderZ dropped the /season/ path segment and
-    switched to pagination, so we hit /players?...&page=N and turn pages instead of scrolling."""
-    base_url = f"https://renderz.app/players?sortType={sort}&sortDirection=DESC"
+    """Run the browser crawl and return {card_id: record}. RenderZ's newest-first view is /players?sort=new,
+    which reveals more cards via a 'Load more' button (not page numbers)."""
+    base_url = "https://renderz.app/players?sort=new"
     result = {}
     p = sync_playwright().start()
     browser = p.chromium.launch(headless=HEADLESS, args=["--disable-blink-features=AutomationControlled"])
-    # A realistic desktop UA + locale; headless Chromium's default UA is a common bot-block trigger.
     ctx = browser.new_context(
         viewport={"width": 1400, "height": 900}, locale="en-GB",
         user_agent=("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
@@ -531,30 +547,27 @@ def scrape(sort=SORT, band=(MIN_OVERALL, MAX_OVERALL), stats_mode=STATS_MODE,
     page = ctx.new_page()
     page.route("**/*", lambda r: r.abort() if is_blocked(r.request.url) else r.continue_())
     try:
-        print(f"opening {base_url}")
-        page.goto(f"{base_url}&page=1", wait_until="domcontentloaded", timeout=60000)
-        page.wait_for_timeout(3000)
-        if dismiss_popups(page):
-            print("  dismissed a consent/cookie dialog")
-        page.wait_for_timeout(1000)
-
         do_player = stats_mode in ("player", "both")
         do_gk = stats_mode in ("goalkeeper", "both")
 
         if do_player:
-            print("pass: player (outfield)")
-            ensure_template(page, "player")       # make sure GK columns aren't left on from a prior state
-            crawl_paged(page, result, lambda pos: pos.upper() != "GK",
-                        band, known_ids, "player", base_url, "player")
+            print(f"pass: player (outfield) - {base_url}")
+            page.goto(base_url, wait_until="domcontentloaded", timeout=60000)
+            page.wait_for_timeout(3000)
+            if dismiss_popups(page):
+                print("  dismissed a consent/cookie dialog")
+            page.wait_for_timeout(1000)
+            ensure_template(page, "player")
+            crawl_loadmore(page, result, lambda pos: pos.upper() != "GK", band, known_ids, "player")
 
         if do_gk:
-            print("pass: goalkeeper")
-            page.goto(f"{base_url}&page=1", wait_until="domcontentloaded", timeout=60000)
-            page.wait_for_timeout(1500)
+            print(f"pass: goalkeeper - {base_url}")
+            page.goto(base_url, wait_until="domcontentloaded", timeout=60000)
+            page.wait_for_timeout(2500)
             dismiss_popups(page)
+            page.wait_for_timeout(500)
             if ensure_template(page, "goalkeeper"):
-                crawl_paged(page, result, lambda pos: pos.upper() == "GK",
-                            band, known_ids, "goalkeeper", base_url, "goalkeeper")
+                crawl_loadmore(page, result, lambda pos: pos.upper() == "GK", band, known_ids, "goalkeeper")
             else:
                 print("  skipped goalkeeper pass (couldn't switch to GK stats) - outfield still updated")
     except KeyboardInterrupt:
