@@ -95,6 +95,20 @@ def main():
         print(f"    git restore {XLSX.name}")
         sys.exit(1)
     existing["card_id"] = existing["card_id"].astype(str)
+
+    # Repair: drop rows that have NO stats at all (outfield PAC..PHY and GK DIV..HAN all blank/0). These
+    # came from an earlier scrape bug; removing them from `known` makes this run re-scrape them properly.
+    OUT6 = ["PAC", "SHO", "PAS", "DRI", "DEF", "PHY"]
+    GK5 = ["DIV", "HAN", "KIC", "REF", "POS"]
+    statcols = [c for c in OUT6 + GK5 if c in existing.columns]
+    if statcols:
+        vals = existing[statcols].apply(pd.to_numeric, errors="coerce").fillna(0)
+        empty_mask = (vals == 0).all(axis=1)
+        n_empty = int(empty_mask.sum())
+        if n_empty:
+            print(f"Repair: dropping {n_empty} stat-less row(s) so they get re-scraped this run.")
+            existing = existing[~empty_mask].copy()
+
     known = set(existing["card_id"])
     has_details = any(str(c).startswith("attr_") for c in existing.columns)
     print(f"Existing: {XLSX.name}  ({len(existing)} rows, {len(known)} card ids, "

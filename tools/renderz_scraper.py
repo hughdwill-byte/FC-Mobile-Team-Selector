@@ -211,7 +211,17 @@ def process(result, raw, keep_fn, band, ctx, known_ids):
             continue
         if not keep_fn(r.get("position", "")):
             continue
-        result[cid] = r   # latest render wins (correct stats for current template)
+        # Each card has two <a> links (the row and the card art); only the row carries the stat cells.
+        # Keep whichever record has stats so a stats-less duplicate can't wipe a good one.
+        prev = result.get(cid)
+        if prev is not None:
+            r_n = len(r.get("stats") or {})
+            p_n = len(prev.get("stats") or {})
+            if r_n < p_n:
+                continue                       # keep the richer record
+            if r_n == p_n and not r.get("overall") and prev.get("overall"):
+                continue                       # tie: keep the one that has an OVR
+        result[cid] = r
 
 
 def scroll_round(page, w, h):

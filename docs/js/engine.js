@@ -266,7 +266,7 @@ function savePlayers(list) { localStorage.setItem(LS_PLAYERS, JSON.stringify(lis
 function nextId(list) { return list.reduce((m, p) => Math.max(m, p.id || 0), 0) + 1; }
 
 const EDITABLE = ["name","ovr","rank","training_level", ...MAIN_STATS, "base_stats","base_ovr",
-  "positions","rankup_positions","playstyles","growth_override","skill_points","skill_level","skill_forced","skill_choices","notes","variant"];
+  "positions","rankup_positions","playstyles","growth_override","skill_points","skill_level","skill_forced","skill_choices","notes","variant","_autoCurrent"];
 function coerce(k, v) {
   if (v === null || v === undefined) return null;
   if (["ovr","rank","training_level","skill_points","base_ovr","skill_level"].includes(k)) { const n = parseInt(v, 10); return isNaN(n) ? 0 : n; }
@@ -277,7 +277,7 @@ function newPlayer() {
   return { id:null, name:"", ovr:50, rank:0, training_level:0,
     pace:50, shooting:50, passing:50, dribbling:50, defending:50, physical:50,
     base_stats:null, base_ovr:null, positions:[], rankup_positions:[], playstyles:[],
-    growth_override:null, skill_points:0, skill_level:0, skill_forced:null, skill_choices:null, notes:"", variant:"" };
+    growth_override:null, skill_points:0, skill_level:0, skill_forced:null, skill_choices:null, notes:"", variant:"", _autoCurrent:true };
 }
 function applyData(p, data) {
   EDITABLE.forEach((k) => { if (k in data && data[k] !== null && data[k] !== undefined) p[k] = coerce(k, data[k]); });
@@ -761,6 +761,7 @@ function playerOut(p) {
   out.effective_positions = st.positions;   // includes rank-up unlocks once the card is at max rank
   out.playstyles = p.playstyles || []; out.growth_override = p.growth_override || null;
   out.skill_points = p.skill_points; out.notes = p.notes || ""; out.variant = p.variant || "";
+  out._autoCurrent = p._autoCurrent;        // remember whether current stats are auto-calculated or hand-entered
   out.best_position = bp; out.best_score = Math.round(bs * 100) / 100;
   return out;
 }

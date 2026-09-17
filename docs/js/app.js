@@ -743,6 +743,9 @@ function collectEditor() {
     base_ovr: p.base_ovr != null ? p.base_ovr : null,   // rank-0 OVR (Team OVR uses this, not current)
     skill_forced: p.skill_forced || null,
     skill_choices: p.skill_choices || null,   // player-picked max-rank skills {name: level}
+    // Remember the auto/manual choice: the checkbox when it exists, else whatever the card had. When it's
+    // off, the current stats are hand-entered and must NOT be recalculated on reload.
+    _autoCurrent: g("auto-current") ? g("auto-current").checked : (p._autoCurrent !== false),
   };
 }
 
