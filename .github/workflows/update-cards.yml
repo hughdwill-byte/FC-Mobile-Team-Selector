@@ -56,7 +56,9 @@ jobs:
           if [ -n "$(git status --porcelain docs/data/cards.json renderz_full_24.xlsx renderz_players_24.xlsx)" ]; then
             git config user.name  "github-actions[bot]"
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git add docs/data/cards.json renderz_full_24.xlsx renderz_players_24.xlsx 2>/dev/null || git add docs/data/cards.json
+            git add docs/data/cards.json
+            [ -f renderz_full_24.xlsx ] && git add renderz_full_24.xlsx
+            [ -f renderz_players_24.xlsx ] && git add renderz_players_24.xlsx
             git commit -m "Update card database (scheduled)"
             git push
             echo "Pushed refreshed cards.json."

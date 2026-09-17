@@ -29,8 +29,11 @@ if errorlevel 1 (
   exit /b 1
 )
 
-REM Commit + push only if something actually changed
-git add docs/data/cards.json renderz_full_24.xlsx renderz_players_24.xlsx 2>nul
+REM Commit + push only if something actually changed. Stage files one at a time so a missing path
+REM (e.g. renderz_players_24.xlsx doesn't exist) can't make git stage nothing.
+git add docs/data/cards.json 2>nul
+if exist renderz_full_24.xlsx git add renderz_full_24.xlsx 2>nul
+if exist renderz_players_24.xlsx git add renderz_players_24.xlsx 2>nul
 git diff --cached --quiet
 if errorlevel 1 (
   git commit -m "Update card database (local %date%)"
