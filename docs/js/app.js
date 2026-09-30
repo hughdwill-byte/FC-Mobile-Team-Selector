@@ -1021,6 +1021,7 @@ async function renderSignings(app) {
     <td class="num">${r.current_ovr != null ? r.current_ovr : "—"}</td>
     <td class="num">${r.aim_ovr != null ? "≥ " + r.aim_ovr : "—"}</td>
     <td class="num rating ${cls(r.gain)}">+${r.gain.toFixed(1)}</td>
+    <td>${r.formation ? `<span class="chip">${esc(r.formation)}</span>` : "—"}</td>
   </tr>`).join("");
   const form = d.best_formation ? ` Right now your best shape is <b>${esc(d.best_formation)}</b>.` : "";
   app.innerHTML = `
@@ -1037,13 +1038,15 @@ async function renderSignings(app) {
         <th class="num" title="Base OVR of the specialist you'd replace there (blank = you have no specialist for this role)">Your OVR</th>
         <th class="num" title="Lowest base OVR that would improve your best XI here">Aim OVR</th>
         <th class="num" title="Base-OVR points your best XI gains from a ${tgt} signing">Gain @ ${tgt}</th>
+        <th title="The formation your best XI would use once this player is signed">Best formation</th>
       </tr></thead>
-      <tbody>${rows || `<tr><td colspan="5" style="padding:14px">No position improves with a ${tgt} OVR signing — your best XI is already at least this strong everywhere. Try a higher rating above.</td></tr>`}</tbody></table>
+      <tbody>${rows || `<tr><td colspan="6" style="padding:14px">No position improves with a ${tgt} OVR signing — your best XI is already at least this strong everywhere. Try a higher rating above.</td></tr>`}</tbody></table>
     </div>
     <div class="panel"><div class="hint">
       Every option is scored by re-solving your <b>best formation</b> with the new player added, on <b>base OVR</b> — so a pick only ranks if it earns a place in a coherent best XI.
       <b>Your OVR</b> = the specialist you'd replace at that role (blank = you don't have one). <b>Aim OVR</b> = the lowest base OVR worth buying there. <b>Gain</b> = base‑OVR points added to your best XI, biggest first.
       Because a formation has one slot per role, filling a missing side (an <span class="badge warn">gap</span> like an RM when you already have an LM) scores far higher than doubling up a role you already cover — the top row is the best place to spend, not just the highest rating.
+      <b>Best formation</b> = the shape your XI would line up in once that player is signed.
     </div></div>`;
   const inp = $("#sign-ovr");
   if (inp) inp.onchange = () => { State._signingOvr = Math.max(60, Math.min(140, Math.round(Number(inp.value) || d.ref_ovr))); persist(); renderSignings(app); };

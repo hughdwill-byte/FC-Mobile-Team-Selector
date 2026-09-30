@@ -948,10 +948,12 @@ function computeSigningTargets(states, targetOvr) {
   });
   const covers = {}; positions.forEach((p) => covers[p] = 0);
   states.forEach((s) => (s.positions || []).forEach((p) => { if (covers[p] != null) covers[p]++; }));
-  const gainAt = (pos, ovr) => bestFormationBase(states.concat([synthSigning(pos, ovr)])).total - base.total;
+  const solveWith = (pos, ovr) => bestFormationBase(states.concat([synthSigning(pos, ovr)]));
+  const gainAt = (pos, ovr) => solveWith(pos, ovr).total - base.total;
   const EPS = 0.05, LO = 60, HI = 140;
   const out = positions.map((pos) => {
-    const gain = Math.max(0, gainAt(pos, tgt));
+    const withSign = solveWith(pos, tgt);          // best formation once this signing is added
+    const gain = Math.max(0, withSign.total - base.total);
     // lowest OVR that would improve the best XI at this position (binary search on the base-OVR solver)
     let aim = null;
     if (gainAt(pos, HI) > EPS) {
@@ -959,7 +961,8 @@ function computeSigningTargets(states, targetOvr) {
       else { let lo = LO, hi = HI; while (hi - lo > 1) { const mid = (lo + hi) >> 1; if (gainAt(pos, mid) > EPS) hi = mid; else lo = mid; } aim = hi; }
     }
     return { position: pos, current_ovr: occupant[pos] != null ? occupant[pos] : null,
-             aim_ovr: aim, gain: r2(gain), in_xi: occupant[pos] != null, has_specialist: covers[pos] > 0 };
+             aim_ovr: aim, gain: r2(gain), in_xi: occupant[pos] != null, has_specialist: covers[pos] > 0,
+             formation: withSign.formation };   // the shape this player would slot into for your best team
   }).filter((r) => r.gain > EPS);
   // biggest improvement first; on a tie, a position you don't yet field (fills a shape gap) ranks ahead
   out.sort((a, b) => (b.gain - a.gain) || ((a.in_xi === b.in_xi) ? 0 : (a.in_xi ? 1 : -1)) || ((a.aim_ovr || 0) - (b.aim_ovr || 0)));
