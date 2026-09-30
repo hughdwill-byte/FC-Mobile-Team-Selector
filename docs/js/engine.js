@@ -894,35 +894,77 @@ function benchView(states, size) {
 }
 
 // ----------------------------------------------------------------- signing targets (what to buy next)
-// Which position + OVR to buy to most improve the squad, compared on BASE OVR (not the trained stat score,
-// which is inflated by training). For each position it finds the weakest starter you'd replace (or, for a
-// position you don't field, your worst starter overall) and how much OVR a signing at the chosen rating adds.
+// Score a player purely on BASE OVR and position fit (NOT trained stats, which are inflated by training and
+// made the old recommender always say "no improvement"). Keeps the keeper rules so a striker is never slotted
+// in goal and vice-versa.
+function baseSlotScore(state, position) {
+  const pr = loadRule("positions");
+  const oop = pr.out_of_position_penalty != null ? pr.out_of_position_penalty : 0.82;
+  const gkp = pr.gk_mismatch_penalty != null ? pr.gk_mismatch_penalty : 0.05;
+  const b = baseOvrOf(state);
+  if (position === "GK") return isGk(state) ? b : gkp * b;
+  if (isGk(state) && state.positions.length === 1) return gkp * b;
+  if (state.positions.indexOf(position) >= 0) return b;   // real, in-position fit
+  return oop * b;                                          // out of position
+}
+// Best achievable XI measured in base-OVR points, choosing the formation that maximises it. Reusing the real
+// formation solver means a signing only "counts" if it slots into a coherent best formation - and because a
+// formation has one slot per role, a mirror position (an RM when you already have an LM) fills an otherwise
+// empty/out-of-position slot and scores, while a duplicate of a role you already field does not.
+function bestFormationBase(states) {
+  const forms = loadRule("formations").formations;
+  const posSet = {}; forms.forEach((f) => f.slots.forEach((p) => posSet[p] = true));
+  const table = {}; Object.keys(posSet).forEach((pos) => { table[pos] = states.map((s) => baseSlotScore(s, pos)); });
+  let best = null;
+  forms.forEach((f) => { const r = solveFormation(states, f, table); if (!best || r.total > best.total) best = r; });
+  return best || { total: 0, slots: [], formation: null };
+}
+// A hypothetical signing: a player who ONLY plays `pos`, at the given base OVR, no trained-stat inflation.
+function synthSigning(pos, ovr) {
+  return { id: -99999, name: "(target)", ovr: ovr, rank: 0, base_ovr: ovr, training_level: 0,
+    stats: {}, positions: [pos], rankup_positions: [], playstyles: [], growth: {},
+    growth_override: null, skill_points: 0, base_stats: {} };
+}
+// For every position, how much a signing there raises the BEST formation (in base-OVR points), plus the
+// lowest OVR that helps at all ("aim"). Ranked by the gain at the chosen OVR, so the top row is the best place
+// to spend - grounded in the current squad, balanced by formation shape, and only where it fits a best XI.
 function computeSigningTargets(states, targetOvr) {
   const positions = (loadRule("positions").positions || []).slice();
-  const xi = optimize(states, 1)[0];
+  const base = bestFormationBase(states);
   const byId = {}; states.forEach((s) => byId[s.id] = s);
-  // weakest starter BASE OVR per position in the Best XI, and the overall list of starter base OVRs
-  const starterBar = {}; const starterOvrs = [];
-  if (xi && xi.slots) xi.slots.forEach((a) => {
-    const st = byId[a.player_id]; const b = st ? baseOvrOf(st) : 0;
-    if (b > 0) starterOvrs.push(b);
-    if (b > 0 && (starterBar[a.position] == null || b < starterBar[a.position])) starterBar[a.position] = b;
-  });
+  const starterOvrs = (base.slots || []).map((a) => (byId[a.player_id] ? baseOvrOf(byId[a.player_id]) : 0)).filter((x) => x > 0);
   const refOvr = starterOvrs.length ? Math.round(starterOvrs.reduce((x, y) => x + y, 0) / starterOvrs.length) : 100;
   const worst = starterOvrs.length ? Math.min.apply(null, starterOvrs) : 0;
   const tgt = Math.max(60, Math.min(140, Math.round(Number(targetOvr) || refOvr)));
-  // how many specialists you own per position (to flag positions you don't have)
+  // base OVR of the current occupant of each role in the best XI - but only when a REAL specialist fills it
+  // (a slot patched by an out-of-position player counts as a gap, not "your RB", so mirror gaps show honestly)
+  const occupant = {};
+  (base.slots || []).forEach((a) => {
+    const st = byId[a.player_id]; if (!st) return;
+    const native = (st.positions || []).indexOf(a.position) >= 0;
+    if (!native) return;
+    const b = baseOvrOf(st);
+    if (occupant[a.position] == null || b < occupant[a.position]) occupant[a.position] = b;
+  });
   const covers = {}; positions.forEach((p) => covers[p] = 0);
   states.forEach((s) => (s.positions || []).forEach((p) => { if (covers[p] != null) covers[p]++; }));
+  const gainAt = (pos, ovr) => bestFormationBase(states.concat([synthSigning(pos, ovr)])).total - base.total;
+  const EPS = 0.05, LO = 60, HI = 140;
   const out = positions.map((pos) => {
-    const inXi = starterBar[pos] != null;
-    const bar = inXi ? starterBar[pos] : worst;     // beat the current starter, or (new shape) your worst starter
-    return { position: pos, current_ovr: inXi ? bar : null, aim_ovr: bar + 1, gain: Math.max(0, tgt - bar),
-             in_xi: inXi, has_specialist: covers[pos] > 0 };
-  }).filter((r) => r.gain > 0);
-  // biggest OVR upgrade first; on a tie prefer a straight starter upgrade over a formation change
-  out.sort((a, b) => (b.gain - a.gain) || ((a.in_xi === b.in_xi) ? 0 : (a.in_xi ? -1 : 1)) || (a.aim_ovr - b.aim_ovr));
-  return { ref_ovr: refOvr, worst_starter_ovr: worst, target_ovr: tgt, recommendations: out };
+    const gain = Math.max(0, gainAt(pos, tgt));
+    // lowest OVR that would improve the best XI at this position (binary search on the base-OVR solver)
+    let aim = null;
+    if (gainAt(pos, HI) > EPS) {
+      if (gainAt(pos, LO) > EPS) aim = LO;
+      else { let lo = LO, hi = HI; while (hi - lo > 1) { const mid = (lo + hi) >> 1; if (gainAt(pos, mid) > EPS) hi = mid; else lo = mid; } aim = hi; }
+    }
+    return { position: pos, current_ovr: occupant[pos] != null ? occupant[pos] : null,
+             aim_ovr: aim, gain: r2(gain), in_xi: occupant[pos] != null, has_specialist: covers[pos] > 0 };
+  }).filter((r) => r.gain > EPS);
+  // biggest improvement first; on a tie, a position you don't yet field (fills a shape gap) ranks ahead
+  out.sort((a, b) => (b.gain - a.gain) || ((a.in_xi === b.in_xi) ? 0 : (a.in_xi ? 1 : -1)) || ((a.aim_ovr || 0) - (b.aim_ovr || 0)));
+  return { ref_ovr: refOvr, worst_starter_ovr: worst, target_ovr: tgt,
+           best_formation: base.formation, recommendations: out };
 }
 
 

@@ -1017,33 +1017,33 @@ async function renderSignings(app) {
   const cls = (g) => (g >= 3 ? "hi" : g >= 1 ? "mid" : "lo");
   const rows = recs.map((r, i) => `<tr>
     <td class="num">${i + 1}</td>
-    <td><span class="chip pos">${esc(r.position)}</span>${r.in_xi ? "" : ` <span class="badge warn" title="You don't field this position now — a player here this good could earn a spot with a formation change">new</span>`}</td>
+    <td><span class="chip pos">${esc(r.position)}</span>${r.in_xi ? "" : ` <span class="badge warn" title="No specialist here — filling this role balances your best formation">gap</span>`}</td>
     <td class="num">${r.current_ovr != null ? r.current_ovr : "—"}</td>
-    <td class="num">≥ ${r.aim_ovr}</td>
-    <td class="num rating ${cls(r.gain)}">+${r.gain.toFixed(0)}</td>
+    <td class="num">${r.aim_ovr != null ? "≥ " + r.aim_ovr : "—"}</td>
+    <td class="num rating ${cls(r.gain)}">+${r.gain.toFixed(1)}</td>
   </tr>`).join("");
+  const form = d.best_formation ? ` Right now your best shape is <b>${esc(d.best_formation)}</b>.` : "";
   app.innerHTML = `
     <div class="section-title"><h2>Recommended signings</h2>
-      <span class="hint">Which position and OVR to buy next to most improve your squad — compared on base OVR.</span></div>
+      <span class="hint">Which position and OVR to buy next to most improve your best XI — based on your real squad and formation.</span></div>
     <div class="panel">
       <label>I can sign a player rated
         <input id="sign-ovr" type="number" min="60" max="140" value="${tgt}" style="width:80px" /> OVR</label>
-      <span class="hint" style="margin-left:8px">Your XI averages about <b>${d.ref_ovr}</b> base OVR; your weakest starter is <b>${d.worst_starter_ovr}</b>. Change the rating to see the best position for that budget.</span>
+      <span class="hint" style="margin-left:8px">Your XI averages about <b>${d.ref_ovr}</b> base OVR.${form} Change the rating to see the best position for that budget.</span>
     </div>
     <div class="panel" style="padding:0;overflow-x:auto">
       <table><thead><tr>
         <th class="num">#</th><th>Position</th>
-        <th class="num" title="Base OVR of the starter you'd replace there">Your OVR</th>
-        <th class="num" title="Buy at least this base OVR to improve">Aim OVR</th>
-        <th class="num" title="OVR gained at that position from a ${tgt} signing">Gain @ ${tgt}</th>
+        <th class="num" title="Base OVR of the specialist you'd replace there (blank = you have no specialist for this role)">Your OVR</th>
+        <th class="num" title="Lowest base OVR that would improve your best XI here">Aim OVR</th>
+        <th class="num" title="Base-OVR points your best XI gains from a ${tgt} signing">Gain @ ${tgt}</th>
       </tr></thead>
-      <tbody>${rows || `<tr><td colspan="5" style="padding:14px">No position improves with a ${tgt} OVR signing — your XI is already at least this strong everywhere. Try a higher rating above.</td></tr>`}</tbody></table>
+      <tbody>${rows || `<tr><td colspan="5" style="padding:14px">No position improves with a ${tgt} OVR signing — your best XI is already at least this strong everywhere. Try a higher rating above.</td></tr>`}</tbody></table>
     </div>
     <div class="panel"><div class="hint">
-      <b>Your OVR</b> = the base OVR of the current starter you'd replace at that position (blank for a position you don't field yet).
-      <b>Aim OVR</b> = the lowest base OVR worth buying there — anything higher improves your squad more.
-      <b>Gain @ ${tgt}</b> = how many base‑OVR points a ${tgt}‑rated signing adds at that position. Ranked biggest first, so the top row is the best place to spend — not just the highest rating.
-      Rows tagged <span class="badge warn">new</span> are positions you don't currently field; a player there this good could earn a spot with a formation change.
+      Every option is scored by re-solving your <b>best formation</b> with the new player added, on <b>base OVR</b> — so a pick only ranks if it earns a place in a coherent best XI.
+      <b>Your OVR</b> = the specialist you'd replace at that role (blank = you don't have one). <b>Aim OVR</b> = the lowest base OVR worth buying there. <b>Gain</b> = base‑OVR points added to your best XI, biggest first.
+      Because a formation has one slot per role, filling a missing side (an <span class="badge warn">gap</span> like an RM when you already have an LM) scores far higher than doubling up a role you already cover — the top row is the best place to spend, not just the highest rating.
     </div></div>`;
   const inp = $("#sign-ovr");
   if (inp) inp.onchange = () => { State._signingOvr = Math.max(60, Math.min(140, Math.round(Number(inp.value) || d.ref_ovr))); persist(); renderSignings(app); };
