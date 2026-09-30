@@ -1013,33 +1013,37 @@ async function renderSignings(app) {
   const d = await API.signingTargets(State._signingOvr);
   if (!d.enough_players) return notEnough(app, d.have);
   const tgt = d.target_ovr;
-  const recs = d.recommendations.filter((r) => r.gain > 0.05);
+  const recs = d.recommendations.filter((r) => r.gain > 0);
   const cls = (g) => (g >= 3 ? "hi" : g >= 1 ? "mid" : "lo");
   const rows = recs.map((r, i) => `<tr>
     <td class="num">${i + 1}</td>
-    <td><span class="chip pos">${esc(r.position)}</span></td>
-    <td class="num">${r.break_in_ovr != null ? "≥ " + r.break_in_ovr : "—"}</td>
-    <td class="num rating ${cls(r.gain)}">+${r.gain.toFixed(1)}</td>
+    <td><span class="chip pos">${esc(r.position)}</span>${r.in_xi ? "" : ` <span class="badge warn" title="You don't field this position now — a player here this good could earn a spot with a formation change">new</span>`}</td>
+    <td class="num">${r.current_ovr != null ? r.current_ovr : "—"}</td>
+    <td class="num">≥ ${r.aim_ovr}</td>
+    <td class="num rating ${cls(r.gain)}">+${r.gain.toFixed(0)}</td>
   </tr>`).join("");
   app.innerHTML = `
     <div class="section-title"><h2>Recommended signings</h2>
-      <span class="hint">Where a new player would most improve your Best XI — the best position to buy for at a given rating.</span></div>
+      <span class="hint">Which position and OVR to buy next to most improve your squad — compared on base OVR.</span></div>
     <div class="panel">
-      <label>Evaluate a signing rated
+      <label>I can sign a player rated
         <input id="sign-ovr" type="number" min="60" max="140" value="${tgt}" style="width:80px" /> OVR</label>
-      <span class="hint" style="margin-left:8px">Your squad's typical level is about <b>${d.ref_ovr}</b>. Change the rating to see the best position for that budget.</span>
+      <span class="hint" style="margin-left:8px">Your XI averages about <b>${d.ref_ovr}</b> base OVR; your weakest starter is <b>${d.worst_starter_ovr}</b>. Change the rating to see the best position for that budget.</span>
     </div>
     <div class="panel" style="padding:0;overflow-x:auto">
       <table><thead><tr>
-        <th class="num">#</th><th>Position</th><th class="num" title="Lowest rating that would improve your XI here">Aim OVR</th>
-        <th class="num" title="Best XI improvement from a signing at the evaluated OVR">Gain @ ${tgt} OVR</th>
+        <th class="num">#</th><th>Position</th>
+        <th class="num" title="Base OVR of the starter you'd replace there">Your OVR</th>
+        <th class="num" title="Buy at least this base OVR to improve">Aim OVR</th>
+        <th class="num" title="OVR gained at that position from a ${tgt} signing">Gain @ ${tgt}</th>
       </tr></thead>
-      <tbody>${rows || `<tr><td colspan="4" style="padding:14px">No position improves with a ${tgt} OVR signing — your XI is already stronger than that everywhere. Try a higher rating above.</td></tr>`}</tbody></table>
+      <tbody>${rows || `<tr><td colspan="5" style="padding:14px">No position improves with a ${tgt} OVR signing — your XI is already at least this strong everywhere. Try a higher rating above.</td></tr>`}</tbody></table>
     </div>
     <div class="panel"><div class="hint">
-      <b>Aim OVR</b> = the lowest rating a new player at that position needs to break into your Best XI (aim for that or higher).
-      <b>Gain</b> = how much your Best XI improves if you sign a player of the chosen rating there. It considers every formation, so a position you don't currently field can still show up if it's worth switching to.
-      Positions you're already strong in show no gain until you raise the rating — that's why this doesn't just tell you to buy the highest‑rated player.
+      <b>Your OVR</b> = the base OVR of the current starter you'd replace at that position (blank for a position you don't field yet).
+      <b>Aim OVR</b> = the lowest base OVR worth buying there — anything higher improves your squad more.
+      <b>Gain @ ${tgt}</b> = how many base‑OVR points a ${tgt}‑rated signing adds at that position. Ranked biggest first, so the top row is the best place to spend — not just the highest rating.
+      Rows tagged <span class="badge warn">new</span> are positions you don't currently field; a player there this good could earn a spot with a formation change.
     </div></div>`;
   const inp = $("#sign-ovr");
   if (inp) inp.onchange = () => { State._signingOvr = Math.max(60, Math.min(140, Math.round(Number(inp.value) || d.ref_ovr))); persist(); renderSignings(app); };

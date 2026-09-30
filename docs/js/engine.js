@@ -894,41 +894,35 @@ function benchView(states, size) {
 }
 
 // ----------------------------------------------------------------- signing targets (what to buy next)
-// A hypothetical new player at a position and OVR, stats set to the OVR so its slot score ~= OVR.
-function synthSigning(pos, ovr) {
-  const stats = {}; MAIN_STATS.forEach((s) => stats[s] = ovr);
-  return { id: -99999, name: "(target)", ovr: ovr, rank: 0, base_ovr: ovr, training_level: 0,
-    stats: stats, positions: [pos], rankup_positions: [], playstyles: [], growth: {},
-    growth_override: null, skill_points: 0, base_stats: {} };
-}
-// For each position, work out how much signing ONE new player there would raise the Best XI, and the
-// lowest OVR that would make any difference ("break-in"). Ranked by the gain AT a chosen OVR - so it says
-// "the best position to buy for at this rating", not just "buy the highest OVR". Positions you're already
-// strong in show no gain until the evaluated OVR is high enough, which is exactly the point.
+// Which position + OVR to buy to most improve the squad, compared on BASE OVR (not the trained stat score,
+// which is inflated by training). For each position it finds the weakest starter you'd replace (or, for a
+// position you don't field, your worst starter overall) and how much OVR a signing at the chosen rating adds.
 function computeSigningTargets(states, targetOvr) {
   const positions = (loadRule("positions").positions || []).slice();
-  const baseline = bestSquadScore(states);
-  // reference OVR = average OVR of the current Best XI (a signing "at your level")
-  let refOvr = 100;
   const xi = optimize(states, 1)[0];
-  if (xi && xi.slots && xi.slots.length) {
-    const byId = {}; states.forEach((s) => byId[s.id] = s);
-    const ovrs = xi.slots.map((a) => (byId[a.player_id] ? byId[a.player_id].ovr : 0)).filter((x) => x > 0);
-    if (ovrs.length) refOvr = Math.round(ovrs.reduce((a, b) => a + b, 0) / ovrs.length);
-  }
-  const tgt = Math.max(60, Math.min(140, Math.round(Number(targetOvr) || refOvr)));
-  const gainAt = (pos, ovr) => bestSquadScore(states.concat([synthSigning(pos, ovr)])) - baseline;
-  const EPS = 0.2, LO = 60, HI = 140;
-  const out = positions.map((pos) => {
-    let breakIn = null;
-    if (gainAt(pos, HI) >= EPS) {                     // some OVR helps; binary-search the smallest that does
-      if (gainAt(pos, LO) >= EPS) breakIn = LO;
-      else { let lo = LO, hi = HI; while (hi - lo > 1) { const mid = (lo + hi) >> 1; if (gainAt(pos, mid) >= EPS) hi = mid; else lo = mid; } breakIn = hi; }
-    }
-    return { position: pos, break_in_ovr: breakIn, gain: r2(Math.max(0, gainAt(pos, tgt))) };
+  const byId = {}; states.forEach((s) => byId[s.id] = s);
+  // weakest starter BASE OVR per position in the Best XI, and the overall list of starter base OVRs
+  const starterBar = {}; const starterOvrs = [];
+  if (xi && xi.slots) xi.slots.forEach((a) => {
+    const st = byId[a.player_id]; const b = st ? baseOvrOf(st) : 0;
+    if (b > 0) starterOvrs.push(b);
+    if (b > 0 && (starterBar[a.position] == null || b < starterBar[a.position])) starterBar[a.position] = b;
   });
-  out.sort((a, b) => (b.gain - a.gain) || ((a.break_in_ovr == null ? 999 : a.break_in_ovr) - (b.break_in_ovr == null ? 999 : b.break_in_ovr)));
-  return { baseline: r2(baseline), ref_ovr: refOvr, target_ovr: tgt, recommendations: out };
+  const refOvr = starterOvrs.length ? Math.round(starterOvrs.reduce((x, y) => x + y, 0) / starterOvrs.length) : 100;
+  const worst = starterOvrs.length ? Math.min.apply(null, starterOvrs) : 0;
+  const tgt = Math.max(60, Math.min(140, Math.round(Number(targetOvr) || refOvr)));
+  // how many specialists you own per position (to flag positions you don't have)
+  const covers = {}; positions.forEach((p) => covers[p] = 0);
+  states.forEach((s) => (s.positions || []).forEach((p) => { if (covers[p] != null) covers[p]++; }));
+  const out = positions.map((pos) => {
+    const inXi = starterBar[pos] != null;
+    const bar = inXi ? starterBar[pos] : worst;     // beat the current starter, or (new shape) your worst starter
+    return { position: pos, current_ovr: inXi ? bar : null, aim_ovr: bar + 1, gain: Math.max(0, tgt - bar),
+             in_xi: inXi, has_specialist: covers[pos] > 0 };
+  }).filter((r) => r.gain > 0);
+  // biggest OVR upgrade first; on a tie prefer a straight starter upgrade over a formation change
+  out.sort((a, b) => (b.gain - a.gain) || ((a.in_xi === b.in_xi) ? 0 : (a.in_xi ? -1 : 1)) || (a.aim_ovr - b.aim_ovr));
+  return { ref_ovr: refOvr, worst_starter_ovr: worst, target_ovr: tgt, recommendations: out };
 }
 
 
