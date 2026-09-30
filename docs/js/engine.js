@@ -893,7 +893,45 @@ function benchView(states, size) {
   return rows.slice(0, size);
 }
 
-// ----------------------------------------------------------------- targets / takeover
+// ----------------------------------------------------------------- signing targets (what to buy next)
+// A hypothetical new player at a position and OVR, stats set to the OVR so its slot score ~= OVR.
+function synthSigning(pos, ovr) {
+  const stats = {}; MAIN_STATS.forEach((s) => stats[s] = ovr);
+  return { id: -99999, name: "(target)", ovr: ovr, rank: 0, base_ovr: ovr, training_level: 0,
+    stats: stats, positions: [pos], rankup_positions: [], playstyles: [], growth: {},
+    growth_override: null, skill_points: 0, base_stats: {} };
+}
+// For each position, work out how much signing ONE new player there would raise the Best XI, and the
+// lowest OVR that would make any difference ("break-in"). Ranked by the gain AT a chosen OVR - so it says
+// "the best position to buy for at this rating", not just "buy the highest OVR". Positions you're already
+// strong in show no gain until the evaluated OVR is high enough, which is exactly the point.
+function computeSigningTargets(states, targetOvr) {
+  const positions = (loadRule("positions").positions || []).slice();
+  const baseline = bestSquadScore(states);
+  // reference OVR = average OVR of the current Best XI (a signing "at your level")
+  let refOvr = 100;
+  const xi = optimize(states, 1)[0];
+  if (xi && xi.slots && xi.slots.length) {
+    const byId = {}; states.forEach((s) => byId[s.id] = s);
+    const ovrs = xi.slots.map((a) => (byId[a.player_id] ? byId[a.player_id].ovr : 0)).filter((x) => x > 0);
+    if (ovrs.length) refOvr = Math.round(ovrs.reduce((a, b) => a + b, 0) / ovrs.length);
+  }
+  const tgt = Math.max(60, Math.min(140, Math.round(Number(targetOvr) || refOvr)));
+  const gainAt = (pos, ovr) => bestSquadScore(states.concat([synthSigning(pos, ovr)])) - baseline;
+  const EPS = 0.2, LO = 60, HI = 140;
+  const out = positions.map((pos) => {
+    let breakIn = null;
+    if (gainAt(pos, HI) >= EPS) {                     // some OVR helps; binary-search the smallest that does
+      if (gainAt(pos, LO) >= EPS) breakIn = LO;
+      else { let lo = LO, hi = HI; while (hi - lo > 1) { const mid = (lo + hi) >> 1; if (gainAt(pos, mid) >= EPS) hi = mid; else lo = mid; } breakIn = hi; }
+    }
+    return { position: pos, break_in_ovr: breakIn, gain: r2(Math.max(0, gainAt(pos, tgt))) };
+  });
+  out.sort((a, b) => (b.gain - a.gain) || ((a.break_in_ovr == null ? 999 : a.break_in_ovr) - (b.break_in_ovr == null ? 999 : b.break_in_ovr)));
+  return { baseline: r2(baseline), ref_ovr: refOvr, target_ovr: tgt, recommendations: out };
+}
+
+
 function normCost(xp, rankItems) { const n = loadRule("costs").normalization || {}; return xp*(n.training_unit||1) + rankItems*(n.rankup_unit||1); }
 function computeTakeover(target, incumbent, position, transferSource) {
   const costs = loadRule("costs"); const tC = costs.training.per_level, rC = costs.rankup.per_rank;
@@ -1046,6 +1084,8 @@ window.API = {
   gaps() { const states = statesFromStore(); if (states.length < 11) return A({ enough_players:false, have:states.length, need:11 });
     const rep = gapReport(states); rep.enough_players = true; return A(rep); },
   bench(size) { return A({ bench: benchView(statesFromStore(), size) }); },
+  signingTargets(targetOvr) { const states = statesFromStore(); if (states.length < 11) return A({ enough_players:false, have:states.length, need:11 });
+    const r = computeSigningTargets(states, targetOvr); r.enough_players = true; return A(r); },
   bestFormations() { const states = statesFromStore(); if (states.length < 11) return A({ current:null, potential:null });
     return A({ current: optimize(states,1)[0].formation, potential: optimize(states.map(potentialState),1)[0].formation }); },
   formationXi(f) { const fr = solveNamed(statesFromStore(), f); if (!fr) return Promise.reject(new Error("Unknown formation")); return A(fr); },

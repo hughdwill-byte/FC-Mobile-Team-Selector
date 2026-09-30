@@ -98,6 +98,7 @@ async function render() {
     if (State.view === "players") return renderPlayers(app);
     if (State.view === "upgrades") return renderUpgrades(app);
     if (State.view === "gaps") return renderGaps(app);
+    if (State.view === "signings") return renderSignings(app);
     if (State.view === "bench") return renderBench(app);
     if (State.view === "target") return renderTarget(app);
     if (State.view === "rules") return renderRules(app);
@@ -1005,6 +1006,43 @@ async function renderGaps(app) {
         <table><thead><tr><th>Slot</th><th>Starter</th><th class="num">Score</th><th class="num">vs avg</th><th>Flags</th></tr></thead>
         <tbody>${slots}</tbody></table></div></div>
     </div>`;
+}
+
+// ------------------------------------------------------------------ Signings (what to buy next)
+async function renderSignings(app) {
+  const d = await API.signingTargets(State._signingOvr);
+  if (!d.enough_players) return notEnough(app, d.have);
+  const tgt = d.target_ovr;
+  const recs = d.recommendations.filter((r) => r.gain > 0.05);
+  const cls = (g) => (g >= 3 ? "hi" : g >= 1 ? "mid" : "lo");
+  const rows = recs.map((r, i) => `<tr>
+    <td class="num">${i + 1}</td>
+    <td><span class="chip pos">${esc(r.position)}</span></td>
+    <td class="num">${r.break_in_ovr != null ? "≥ " + r.break_in_ovr : "—"}</td>
+    <td class="num rating ${cls(r.gain)}">+${r.gain.toFixed(1)}</td>
+  </tr>`).join("");
+  app.innerHTML = `
+    <div class="section-title"><h2>Recommended signings</h2>
+      <span class="hint">Where a new player would most improve your Best XI — the best position to buy for at a given rating.</span></div>
+    <div class="panel">
+      <label>Evaluate a signing rated
+        <input id="sign-ovr" type="number" min="60" max="140" value="${tgt}" style="width:80px" /> OVR</label>
+      <span class="hint" style="margin-left:8px">Your squad's typical level is about <b>${d.ref_ovr}</b>. Change the rating to see the best position for that budget.</span>
+    </div>
+    <div class="panel" style="padding:0;overflow-x:auto">
+      <table><thead><tr>
+        <th class="num">#</th><th>Position</th><th class="num" title="Lowest rating that would improve your XI here">Aim OVR</th>
+        <th class="num" title="Best XI improvement from a signing at the evaluated OVR">Gain @ ${tgt} OVR</th>
+      </tr></thead>
+      <tbody>${rows || `<tr><td colspan="4" style="padding:14px">No position improves with a ${tgt} OVR signing — your XI is already stronger than that everywhere. Try a higher rating above.</td></tr>`}</tbody></table>
+    </div>
+    <div class="panel"><div class="hint">
+      <b>Aim OVR</b> = the lowest rating a new player at that position needs to break into your Best XI (aim for that or higher).
+      <b>Gain</b> = how much your Best XI improves if you sign a player of the chosen rating there. It considers every formation, so a position you don't currently field can still show up if it's worth switching to.
+      Positions you're already strong in show no gain until you raise the rating — that's why this doesn't just tell you to buy the highest‑rated player.
+    </div></div>`;
+  const inp = $("#sign-ovr");
+  if (inp) inp.onchange = () => { State._signingOvr = Math.max(60, Math.min(140, Math.round(Number(inp.value) || d.ref_ovr))); persist(); renderSignings(app); };
 }
 
 // ------------------------------------------------------------------ Bench
