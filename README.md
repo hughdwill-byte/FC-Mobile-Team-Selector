@@ -29,8 +29,10 @@ uploads.
 
 ## Prefer a local desktop version?
 
-There's also a **pure-Python** version (identical features) you launch with `start.bat`; it
-stores data in a single `data/fcmobile.sqlite3` file. Node.js is not required. Setup guide:
+There's also a **pure-Python** desktop version, launched with `start.bat`. It has the core
+optimiser (Best XI, upgrades, gaps, bench, target planner, rules, data) and stores everything
+in a single `data/fcmobile.sqlite3` file. Node.js is not required. The newer web-only extras
+are not included: **Signings**, card-database auto-fill and event card art. Setup guide:
 **[docs/SETUP_WINDOWS.md](docs/SETUP_WINDOWS.md)**.
 
 ---
@@ -112,6 +114,16 @@ out-of-position player, and which have no genuine specialist — in priority ord
 
 ![Gaps](docs/images/04-gaps.png)
 
+### Recommended signings (web version)
+Pick a rating (it defaults to your XI's average OVR) and the tab ranks every position by how
+much signing a player there would raise your Best XI. It searches all formations, so it can
+recommend a position you don't currently field. For each position it shows:
+
+- your current specialist's base OVR
+- the minimum **aim OVR** a signing needs to break into the XI
+- the gain
+- the **formation** your best XI would switch to
+
 ### Bench view
 Your next 7 best players outside the XI (visibility only — not optimised).
 
@@ -131,9 +143,9 @@ Export/import CSV or JSON, and download a one-click SQLite backup.
 
 ---
 
-## Quick start
+## Quick start (desktop version)
 
-### Windows (recommended)
+### Windows
 1. Install **Python 3.10+** from <https://www.python.org/downloads/> — tick
    *“Add Python to PATH”* during setup.
 2. Download this project (green **Code → Download ZIP** on GitHub) and unzip it.
@@ -274,11 +286,27 @@ Everything is in **one file**: `data/fcmobile.sqlite3`.
 
 | Key | Action |
 |---|---|
-| <kbd>1</kbd>–<kbd>7</kbd> | Switch tabs (Best XI … Data) |
+| <kbd>1</kbd>–<kbd>8</kbd> | Switch tabs: Best XI, Players, Upgrades, Gaps, Bench, Target, Rules, Data (Signings is click-only) |
 | <kbd>n</kbd> | Add a new player |
 | <kbd>r</kbd> | Recompute the current view |
 | <kbd>Ctrl</kbd>+<kbd>Enter</kbd> | Save (in the editor) |
 | <kbd>Esc</kbd> | Close the editor |
+
+---
+
+## Keeping the card database fresh
+
+The web version's card search uses `docs/data/cards.json`, which is built from
+[RenderZ](https://renderz.app) by the scraper in `tools/`:
+
+- **Daily card update.** RenderZ blocks datacentre IPs, so the scrape runs on a home PC as a
+  scheduled task. `tools/update_cards.bat` scrapes RenderZ, rebuilds `cards.json` and pushes
+  it, and the live site updates about a minute later. Setup:
+  **[SETUP_LOCAL_UPDATE.md](SETUP_LOCAL_UPDATE.md)**. Use `update_cards_full.bat` for a full
+  catch-up re-scan.
+- **Event card art.** A daily GitHub Action (`.github/workflows/update-event-art.yml`)
+  rebuilds the promo/event backgrounds used to theme player cards.
+- **From your own spreadsheet.** Run `python tools/build_cards.py players.xlsx --push`.
 
 ---
 
@@ -308,7 +336,12 @@ FC-Mobile-Team-Selector/
 │  ├─ upgrades.py           # marginal-gain-per-cost planner
 │  ├─ analysis.py           # gap report + bench
 │  ├─ rules.py  csvio.py    # rules loader, CSV import/export
-├─ frontend/                # vanilla HTML/CSS/JS dashboard (no build step)
+├─ frontend/                # desktop dashboard: vanilla HTML/CSS/JS (no build step)
+├─ docs/                    # the in-browser web version (GitHub Pages)
+│  ├─ js/engine.js          # optimiser, upgrades, signings, all in the browser
+│  └─ data/                 # cards.json card database + events.json card art
+├─ tools/                   # RenderZ scraper, card/event-art builders, update scripts
+├─ .github/workflows/       # scheduled card / event-art updates
 ├─ rules/                   # editable game-rule / tuning JSON
 ├─ tests/                   # optimizer + scoring unit tests
 └─ data/                    # your SQLite file lives here (git-ignored)
